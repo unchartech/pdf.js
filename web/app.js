@@ -2603,6 +2603,7 @@ function webViewerFindFromUrlHash(evt) {
     entireWord: false,
     highlightAll: true,
     findPrevious: false,
+    searchPage: null,
   });
 }
 

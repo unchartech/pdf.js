@@ -415,6 +415,14 @@ class PDFFindController {
       matchesLength = [];
     const queryLen = query.length;
 
+    // [thread] logic changed by search only one page
+    const { searchPage } = this.state;
+    if (searchPage && pageIndex !== searchPage) {
+      this._pageMatches[pageIndex] = [];
+      this._pageMatchesLength[pageIndex] = [];
+      return;
+    }
+
     let matchIdx = -queryLen;
     while (true) {
       matchIdx = pageContent.indexOf(query, matchIdx + queryLen);
@@ -432,6 +440,7 @@ class PDFFindController {
       matches.push(originalMatchIdx);
       matchesLength.push(originalQueryLen);
     }
+
     this._pageMatches[pageIndex] = matches;
     this._pageMatchesLength[pageIndex] = matchesLength;
   }
@@ -488,7 +497,7 @@ class PDFFindController {
     let pageContent = this._pageContents[pageIndex];
     const pageDiffs = this._pageDiffs[pageIndex];
     let query = this._query;
-    const { caseSensitive, entireWord, phraseSearch } = this._state;
+    const { caseSensitive, entireWord, phraseSearch, searchPage } = this._state;
 
     if (query.length === 0) {
       // Do nothing: the matches should be wiped out already.
@@ -608,6 +617,7 @@ class PDFFindController {
 
   _nextMatch() {
     const previous = this._state.findPrevious;
+    const searchPage = this._state.searchPage;
     const currentPageIndex = this._linkService.page - 1;
     const numPages = this._linkService.pagesCount;
 
@@ -634,6 +644,7 @@ class PDFFindController {
         }
         this._pendingFindMatches.add(i);
         this._extractTextPromises[i].then(pageIdx => {
+          console.log(pageIdx, this.state.query);
           this._pendingFindMatches.delete(pageIdx);
           this._calculateMatch(pageIdx);
         });
