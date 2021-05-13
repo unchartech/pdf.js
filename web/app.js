@@ -2588,6 +2588,7 @@ function webViewerFindFromUrlHash(evt) {
     highlightAll: true,
     findPrevious: false,
     matchDiacritics: true,
+    searchPage: null,
   });
 }
 
