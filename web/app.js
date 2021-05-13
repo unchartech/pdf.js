@@ -2616,6 +2616,7 @@ function webViewerDocumentProperties() {
 }
 
 function webViewerFind(evt) {
+  console.log(evt);
   PDFViewerApplication.findController.executeCommand("find" + evt.type, {
     query: evt.query,
     phraseSearch: evt.phraseSearch,
@@ -2623,6 +2624,7 @@ function webViewerFind(evt) {
     entireWord: evt.entireWord,
     highlightAll: evt.highlightAll,
     findPrevious: evt.findPrevious,
+    searchPage: evt.searchPage,
   });
 }
 
@@ -2634,6 +2636,7 @@ function webViewerFindFromUrlHash(evt) {
     entireWord: false,
     highlightAll: true,
     findPrevious: false,
+    searchPage: null,
   });
 }
 

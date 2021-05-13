@@ -2208,7 +2208,14 @@ gulp.task(
   })
 );
 
+gulp.task('dist-zip', function () {
+  return gulp.src(GENERIC_DIR + './**')
+    .pipe(zip('pdfviewer.zip'))
+    .pipe(gulp.dest('./build'));
+});
+
 gulp.task("dist", gulp.series("dist-repo-git"));
+gulp.task("generic-zip", gulp.series("generic", "dist-zip"));
 
 gulp.task(
   "mozcentralbaseline",
