@@ -2,11 +2,11 @@
   "name": "pdf.js",
   "version": "2.0.0",
   "devDependencies": {
-    "@babel/core": "^7.13.14",
+    "@babel/core": "^7.14.2",
     "@babel/plugin-proposal-logical-assignment-operators": "^7.13.8",
     "@babel/plugin-transform-modules-commonjs": "^7.13.8",
     "@babel/plugin-transform-runtime": "^7.13.10",
-    "@babel/preset-env": "^7.13.12",
+    "@babel/preset-env": "^7.14.2",
     "@babel/runtime": "^7.13.10",
     "acorn": "^8.1.0",
     "autoprefixer": "^10.2.5",
@@ -26,6 +26,7 @@
     "eslint-plugin-prettier": "^3.3.1",
     "eslint-plugin-sort-exports": "^0.3.2",
     "eslint-plugin-unicorn": "^27.0.0",
+    "fuse.js": "^6.4.6",
     "globals": "^13.7.0",
     "gulp": "^4.0.2",
     "gulp-postcss": "^9.0.0",
@@ -33,6 +34,7 @@
     "gulp-replace": "^1.0.0",
     "gulp-zip": "^5.1.0",
     "jasmine": "^3.7.0",
+    "jest": "^26.6.3",
     "jsdoc": "^3.6.6",
     "jstransformer-markdown-it": "^2.1.0",
     "merge-stream": "^2.0.0",
@@ -64,11 +66,15 @@
   },
   "scripts": {
     "postinstall": "cross-env PUPPETEER_PRODUCT=firefox node node_modules/puppeteer/install.js",
+    "fuse-test": "jest --watch",
     "test": "gulp npm-test"
   },
   "repository": {
     "type": "git",
     "url": "git://github.com/mozilla/pdf.js.git"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "babel-jest": "^26.6.3"
+  }
 }

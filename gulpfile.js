@@ -820,6 +820,9 @@ function buildGeneric(defines, dir) {
     gulp
       .src("web/compressed.tracemonkey-pldi-09.pdf")
       .pipe(gulp.dest(dir + "web")),
+    gulp
+      .src("web/fuse.esm.js")
+      .pipe(gulp.dest(dir)),
   ]);
 }
 
