@@ -20,6 +20,91 @@
 import { binarySearchFirstItem, scrollIntoView } from "./ui_utils.js";
 import { createPromiseCapability } from "pdfjs-lib";
 import { getCharacterType } from "./pdf_find_utils.js";
+import { scrollIntoView } from "./ui_utils.js";
+import Fuse from "./fuse.esm.js";
+//import Fuse from "fusejs";
+
+const FUSE_OPTIONS = {
+  includeScore: true,
+};
+
+const SPLIT_LETTER = " ";
+
+/**
+ * Implementation fuse search algorithm
+ */
+class FuseSearch {
+  constructor(content) {
+    this._content = content;
+    this._content_list = [];
+  }
+
+  _get_list_words(text) {
+    return text.split(SPLIT_LETTER);
+  }
+
+  _get_all_indexes(text, word) {
+    return text.reduce((a, e, i) => {
+      if (e.includes(word)) a.push(i);
+      return a;
+    }, []);
+  }
+
+  _prepare_fuse_list(query) {
+    this._result = query;
+    const content = this._content;
+    const content_words = this._get_list_words(content);
+    const query_words = this._get_list_words(query);
+
+    const first_word = query_words[0];
+    const last_word = query_words.slice(-1)[0];
+    const first_indexes = this._get_all_indexes(content_words, first_word);
+    const last_indexes = this._get_all_indexes(content_words, last_word);
+    const all_segments = [];
+    first_indexes.forEach(f_index => {
+      last_indexes.forEach(l_index => {
+        if (f_index < l_index) {
+          const segment_words = content_words.slice(f_index, l_index + 1);
+          const segment = segment_words.join(SPLIT_LETTER);
+          all_segments.push(
+            segment.substring(
+              segment.indexOf(first_word),
+              segment.lastIndexOf(last_word) + last_word.length
+            )
+          );
+        }
+      });
+    });
+
+    this._content_list = all_segments;
+  }
+
+  search(query) {
+    this._prepare_fuse_list(query);
+
+    // Doesn't have matches
+    if (!this._content_list.length) {
+      return -1;
+    }
+
+    // Has only one match
+    if (this._content_list.length === 1) {
+      this._result = this._content_list[0];
+      return this._content.indexOf(this._content_list[0]);
+    }
+
+    // has a few matches, try to find more relevant
+    this._fuse = new Fuse(this._content_list, FUSE_OPTIONS);
+    this._results = this._fuse.search(query);
+    this._result = this._results[0].item;
+
+    return this._results.length ? this._content.indexOf(this._result) : -1;
+  }
+
+  get_result_length() {
+    return this._result ? this._result.length : null;
+  }
+}
 
 const FindState = {
   FOUND: 0,
