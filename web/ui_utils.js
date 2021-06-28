@@ -36,7 +36,7 @@ const PresentationModeState = {
   UNKNOWN: 0,
   NORMAL: 1,
   CHANGING: 2,
-  FULLSCREEN: 3,
+  FULLSCREEN: 3
 };
 
 const SidebarView = {
@@ -45,18 +45,18 @@ const SidebarView = {
   THUMBS: 1, // Default value.
   OUTLINE: 2,
   ATTACHMENTS: 3,
-  LAYERS: 4,
+  LAYERS: 4
 };
 
 const RendererType = {
   CANVAS: "canvas",
-  SVG: "svg",
+  SVG: "svg"
 };
 
 const TextLayerMode = {
   DISABLE: 0,
   ENABLE: 1,
-  ENABLE_ENHANCE: 2,
+  ENABLE_ENHANCE: 2
 };
 
 const ScrollMode = {
@@ -71,7 +71,7 @@ const SpreadMode = {
   UNKNOWN: -1,
   NONE: 0, // Default value.
   ODD: 1,
-  EVEN: 2,
+  EVEN: 2
 };
 
 // Used by `PDFViewerApplication`, and by the API unit-tests.
@@ -94,7 +94,7 @@ function getOutputScale(ctx) {
   return {
     sx: pixelRatio,
     sy: pixelRatio,
-    scaled: pixelRatio !== 1,
+    scaled: pixelRatio !== 1
   };
 }
 
@@ -139,7 +139,8 @@ function scrollIntoView(element, spot, scrollMatches = false) {
     }
     if (spot.left !== undefined) {
       offsetX += spot.left;
-      parent.scrollLeft = offsetX;
+      // TODO: skip scroll by X and zoom to page-fit
+      // parent.scrollLeft = offsetX;
     }
   }
   parent.scrollTop = offsetY;
@@ -150,7 +151,7 @@ function scrollIntoView(element, spot, scrollMatches = false) {
  * PDF.js friendly one: with scroll debounce and scroll direction.
  */
 function watchScroll(viewAreaElement, callback) {
-  const debounceScroll = function (evt) {
+  const debounceScroll = function(evt) {
     if (rAF) {
       return;
     }
@@ -179,7 +180,7 @@ function watchScroll(viewAreaElement, callback) {
     down: true,
     lastX: viewAreaElement.scrollLeft,
     lastY: viewAreaElement.scrollTop,
-    _eventHandler: debounceScroll,
+    _eventHandler: debounceScroll
   };
 
   let rAF = null;
@@ -317,7 +318,7 @@ function getPageSizeInches({ view, userUnit, rotate }) {
 
   return {
     width: changeOrientation ? height : width,
-    height: changeOrientation ? width : height,
+    height: changeOrientation ? width : height
   };
 }
 
@@ -442,12 +443,12 @@ function backtrackBeforeAllVisibleElements(index, views, top) {
  * @returns {Object} `{ first, last, views: [{ id, x, y, view, percent }] }`
  */
 function getVisibleElements({
-  scrollEl,
-  views,
-  sortByVisibility = false,
-  horizontal = false,
-  rtl = false,
-}) {
+                              scrollEl,
+                              views,
+                              sortByVisibility = false,
+                              horizontal = false,
+                              rtl = false
+                            }) {
   const top = scrollEl.scrollTop,
     bottom = top + scrollEl.clientHeight;
   const left = scrollEl.scrollLeft,
@@ -469,6 +470,7 @@ function getVisibleElements({
       element.offsetTop + element.clientTop + element.clientHeight;
     return elementBottom > top;
   }
+
   function isElementNextAfterViewHorizontally(view) {
     const element = view.div;
     const elementLeft = element.offsetLeft + element.clientLeft;
@@ -561,7 +563,7 @@ function getVisibleElements({
       y: currentHeight,
       view,
       percent,
-      widthPercent: (fractionWidth * 100) | 0,
+      widthPercent: (fractionWidth * 100) | 0
     });
     ids.add(view.id);
   }
@@ -570,7 +572,7 @@ function getVisibleElements({
     last = visible[visible.length - 1];
 
   if (sortByVisibility) {
-    visible.sort(function (a, b) {
+    visible.sort(function(a, b) {
       const pc = a.percent - b.percent;
       if (Math.abs(pc) > 0.001) {
         return -pc;
@@ -642,7 +644,7 @@ function isPortraitOrientation(size) {
 /**
  * Promise that is resolved when DOM window becomes visible.
  */
-const animationStarted = new Promise(function (resolve) {
+const animationStarted = new Promise(function(resolve) {
   if (
     typeof PDFJSDev !== "undefined" &&
     PDFJSDev.test("LIB") &&
