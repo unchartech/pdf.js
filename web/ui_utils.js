@@ -36,7 +36,7 @@ const PresentationModeState = {
   UNKNOWN: 0,
   NORMAL: 1,
   CHANGING: 2,
-  FULLSCREEN: 3,
+  FULLSCREEN: 3
 };
 
 const SidebarView = {
@@ -45,18 +45,18 @@ const SidebarView = {
   THUMBS: 1, // Default value.
   OUTLINE: 2,
   ATTACHMENTS: 3,
-  LAYERS: 4,
+  LAYERS: 4
 };
 
 const RendererType = {
   CANVAS: "canvas",
-  SVG: "svg",
+  SVG: "svg"
 };
 
 const TextLayerMode = {
   DISABLE: 0,
   ENABLE: 1,
-  ENABLE_ENHANCE: 2,
+  ENABLE_ENHANCE: 2
 };
 
 const ScrollMode = {
@@ -71,7 +71,7 @@ const SpreadMode = {
   UNKNOWN: -1,
   NONE: 0, // Default value.
   ODD: 1,
-  EVEN: 2,
+  EVEN: 2
 };
 
 // Used by `PDFViewerApplication`, and by the API unit-tests.
@@ -80,27 +80,19 @@ const AutoPrintRegExp = /\bprint\s*\(/;
 /**
  * Scale factors for the canvas, necessary with HiDPI displays.
  */
-class OutputScale {
-  constructor() {
-    const pixelRatio = window.devicePixelRatio || 1;
-
-    /**
-     * @type {number} Horizontal scale.
-     */
-    this.sx = pixelRatio;
-
-    /**
-     * @type {number} Vertical scale.
-     */
-    this.sy = pixelRatio;
-  }
-
-  /**
-   * @type {boolean} Returns `true` when scaling is required, `false` otherwise.
-   */
-  get scaled() {
-    return this.sx !== 1 || this.sy !== 1;
-  }
+function getOutputScale(ctx) {
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const backingStoreRatio =
+    ctx.webkitBackingStorePixelRatio ||
+    ctx.mozBackingStorePixelRatio ||
+    ctx.backingStorePixelRatio ||
+    1;
+  const pixelRatio = devicePixelRatio / backingStoreRatio;
+  return {
+    sx: pixelRatio,
+    sy: pixelRatio,
+    scaled: pixelRatio !== 1
+  };
 }
 
 /**
@@ -126,10 +118,13 @@ function scrollIntoView(element, spot, scrollMatches = false) {
   while (
     (parent.clientHeight === parent.scrollHeight &&
       parent.clientWidth === parent.scrollWidth) ||
-    (scrollMatches &&
-      (parent.classList.contains("markedContent") ||
-        getComputedStyle(parent).overflow === "hidden"))
-  ) {
+    (skipOverflowHiddenElements &&
+      getComputedStyle(parent).overflow === "hidden")
+    ) {
+    if (parent.dataset._scaleY) {
+      offsetY /= parent.dataset._scaleY;
+      offsetX /= parent.dataset._scaleX;
+    }
     offsetY += parent.offsetTop;
     offsetX += parent.offsetLeft;
 
@@ -144,7 +139,8 @@ function scrollIntoView(element, spot, scrollMatches = false) {
     }
     if (spot.left !== undefined) {
       offsetX += spot.left;
-      parent.scrollLeft = offsetX;
+      // TODO: skip scroll by X and zoom to page-fit
+      // parent.scrollLeft = offsetX;
     }
   }
   parent.scrollTop = offsetY;
@@ -155,7 +151,7 @@ function scrollIntoView(element, spot, scrollMatches = false) {
  * PDF.js friendly one: with scroll debounce and scroll direction.
  */
 function watchScroll(viewAreaElement, callback) {
-  const debounceScroll = function (evt) {
+  const debounceScroll = function(evt) {
     if (rAF) {
       return;
     }
@@ -184,7 +180,7 @@ function watchScroll(viewAreaElement, callback) {
     down: true,
     lastX: viewAreaElement.scrollLeft,
     lastY: viewAreaElement.scrollTop,
-    _eventHandler: debounceScroll,
+    _eventHandler: debounceScroll
   };
 
   let rAF = null;
@@ -340,7 +336,7 @@ function getPageSizeInches({ view, userUnit, rotate }) {
 
   return {
     width: changeOrientation ? height : width,
-    height: changeOrientation ? width : height,
+    height: changeOrientation ? width : height
   };
 }
 
@@ -465,12 +461,12 @@ function backtrackBeforeAllVisibleElements(index, views, top) {
  * @returns {Object} `{ first, last, views: [{ id, x, y, view, percent }] }`
  */
 function getVisibleElements({
-  scrollEl,
-  views,
-  sortByVisibility = false,
-  horizontal = false,
-  rtl = false,
-}) {
+                              scrollEl,
+                              views,
+                              sortByVisibility = false,
+                              horizontal = false,
+                              rtl = false
+                            }) {
   const top = scrollEl.scrollTop,
     bottom = top + scrollEl.clientHeight;
   const left = scrollEl.scrollLeft,
@@ -492,6 +488,7 @@ function getVisibleElements({
       element.offsetTop + element.clientTop + element.clientHeight;
     return elementBottom > top;
   }
+
   function isElementNextAfterViewHorizontally(view) {
     const element = view.div;
     const elementLeft = element.offsetLeft + element.clientLeft;
@@ -584,7 +581,7 @@ function getVisibleElements({
       y: currentHeight,
       view,
       percent,
-      widthPercent: (fractionWidth * 100) | 0,
+      widthPercent: (fractionWidth * 100) | 0
     });
     ids.add(view.id);
   }
@@ -593,7 +590,7 @@ function getVisibleElements({
     last = visible[visible.length - 1];
 
   if (sortByVisibility) {
-    visible.sort(function (a, b) {
+    visible.sort(function(a, b) {
       const pc = a.percent - b.percent;
       if (Math.abs(pc) > 0.001) {
         return -pc;
@@ -662,10 +659,67 @@ function isPortraitOrientation(size) {
   return size.width <= size.height;
 }
 
+const WaitOnType = {
+  EVENT: "event",
+  TIMEOUT: "timeout"
+};
+
+/**
+ * @typedef {Object} WaitOnEventOrTimeoutParameters
+ * @property {Object} target - The event target, can for example be:
+ *   `window`, `document`, a DOM element, or an {EventBus} instance.
+ * @property {string} name - The name of the event.
+ * @property {number} delay - The delay, in milliseconds, after which the
+ *   timeout occurs (if the event wasn't already dispatched).
+ */
+
+/**
+ * Allows waiting for an event or a timeout, whichever occurs first.
+ * Can be used to ensure that an action always occurs, even when an event
+ * arrives late or not at all.
+ *
+ * @param {WaitOnEventOrTimeoutParameters}
+ * @returns {Promise} A promise that is resolved with a {WaitOnType} value.
+ */
+function waitOnEventOrTimeout({ target, name, delay = 0 }) {
+  return new Promise(function(resolve, reject) {
+    if (
+      typeof target !== "object" ||
+      !(name && typeof name === "string") ||
+      !(Number.isInteger(delay) && delay >= 0)
+    ) {
+      throw new Error("waitOnEventOrTimeout - invalid parameters.");
+    }
+
+    function handler(type) {
+      if (target instanceof EventBus) {
+        target._off(name, eventHandler);
+      } else {
+        target.removeEventListener(name, eventHandler);
+      }
+
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve(type);
+    }
+
+    const eventHandler = handler.bind(null, WaitOnType.EVENT);
+    if (target instanceof EventBus) {
+      target._on(name, eventHandler);
+    } else {
+      target.addEventListener(name, eventHandler);
+    }
+
+    const timeoutHandler = handler.bind(null, WaitOnType.TIMEOUT);
+    const timeout = setTimeout(timeoutHandler, delay);
+  });
+}
+
 /**
  * Promise that is resolved when DOM window becomes visible.
  */
-const animationStarted = new Promise(function (resolve) {
+const animationStarted = new Promise(function(resolve) {
   if (
     typeof PDFJSDev !== "undefined" &&
     PDFJSDev.test("LIB") &&
@@ -678,6 +732,141 @@ const animationStarted = new Promise(function (resolve) {
   }
   window.requestAnimationFrame(resolve);
 });
+
+/**
+ * NOTE: Only used to support various PDF viewer tests in `mozilla-central`.
+ */
+function dispatchDOMEvent(eventName, args = null) {
+  if (typeof PDFJSDev !== "undefined" && !PDFJSDev.test("MOZCENTRAL")) {
+    throw new Error("Not implemented: dispatchDOMEvent");
+  }
+  const details = Object.create(null);
+  if (args?.length > 0) {
+    const obj = args[0];
+    for (const key in obj) {
+      const value = obj[key];
+      if (key === "source") {
+        if (value === window || value === document) {
+          return; // No need to re-dispatch (already) global events.
+        }
+        continue; // Ignore the `source` property.
+      }
+      details[key] = value;
+    }
+  }
+  const event = document.createEvent("CustomEvent");
+  event.initCustomEvent(eventName, true, true, details);
+  document.dispatchEvent(event);
+}
+
+/**
+ * Simple event bus for an application. Listeners are attached using the `on`
+ * and `off` methods. To raise an event, the `dispatch` method shall be used.
+ */
+class EventBus {
+  constructor(options) {
+    this._listeners = Object.create(null);
+
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("MOZCENTRAL")) {
+      this._isInAutomation = options?.isInAutomation === true;
+    }
+  }
+
+  /**
+   * @param {string} eventName
+   * @param {function} listener
+   * @param {Object} [options]
+   */
+  on(eventName, listener, options = null) {
+    this._on(eventName, listener, {
+      external: true,
+      once: options?.once
+    });
+  }
+
+  /**
+   * @param {string} eventName
+   * @param {function} listener
+   * @param {Object} [options]
+   */
+  off(eventName, listener, options = null) {
+    this._off(eventName, listener, {
+      external: true,
+      once: options?.once
+    });
+  }
+
+  dispatch(eventName) {
+    const eventListeners = this._listeners[eventName];
+    if (!eventListeners || eventListeners.length === 0) {
+      if (
+        (typeof PDFJSDev === "undefined" || PDFJSDev.test("MOZCENTRAL")) &&
+        this._isInAutomation
+      ) {
+        const args = Array.prototype.slice.call(arguments, 1);
+        dispatchDOMEvent(eventName, args);
+      }
+      return;
+    }
+    // Passing all arguments after the eventName to the listeners.
+    const args = Array.prototype.slice.call(arguments, 1);
+    let externalListeners;
+    // Making copy of the listeners array in case if it will be modified
+    // during dispatch.
+    eventListeners.slice(0).forEach(({ listener, external, once }) => {
+      if (once) {
+        this._off(eventName, listener);
+      }
+      if (external) {
+        (externalListeners ||= []).push(listener);
+        return;
+      }
+      listener.apply(null, args);
+    });
+    // Dispatch any "external" listeners *after* the internal ones, to give the
+    // viewer components time to handle events and update their state first.
+    if (externalListeners) {
+      externalListeners.forEach(listener => {
+        listener.apply(null, args);
+      });
+      externalListeners = null;
+    }
+    if (
+      (typeof PDFJSDev === "undefined" || PDFJSDev.test("MOZCENTRAL")) &&
+      this._isInAutomation
+    ) {
+      dispatchDOMEvent(eventName, args);
+    }
+  }
+
+  /**
+   * @ignore
+   */
+  _on(eventName, listener, options = null) {
+    const eventListeners = (this._listeners[eventName] ||= []);
+    eventListeners.push({
+      listener,
+      external: options?.external === true,
+      once: options?.once === true
+    });
+  }
+
+  /**
+   * @ignore
+   */
+  _off(eventName, listener, options = null) {
+    const eventListeners = this._listeners[eventName];
+    if (!eventListeners) {
+      return;
+    }
+    for (let i = 0, ii = eventListeners.length; i < ii; i++) {
+      if (eventListeners[i].listener === listener) {
+        eventListeners.splice(i, 1);
+        return;
+      }
+    }
+  }
+}
 
 function clamp(v, min, max) {
   return Math.min(Math.max(v, min), max);
@@ -873,5 +1062,7 @@ export {
   TextLayerMode,
   UNKNOWN_SCALE,
   VERTICAL_PADDING,
-  watchScroll,
+  waitOnEventOrTimeout,
+  WaitOnType,
+  watchScroll
 };
