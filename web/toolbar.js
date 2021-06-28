@@ -19,7 +19,7 @@ import {
   DEFAULT_SCALE_VALUE,
   MAX_SCALE,
   MIN_SCALE,
-  noContextMenuHandler,
+  noContextMenuHandler
 } from "./ui_utils.js";
 
 const PAGE_NUMBER_LOADING_INDICATOR = "visiblePageIsLoading";
@@ -70,10 +70,10 @@ class Toolbar {
       { element: options.print, eventName: "print" },
       {
         element: options.presentationModeButton,
-        eventName: "presentationmode",
+        eventName: "presentationmode"
       },
       { element: options.download, eventName: "download" },
-      { element: options.viewBookmark, eventName: null },
+      { element: options.viewBookmark, eventName: null }
     ];
     this.items = {
       numPages: options.numPages,
@@ -84,7 +84,7 @@ class Toolbar {
       previous: options.previous,
       next: options.next,
       zoomIn: options.zoomIn,
-      zoomOut: options.zoomOut,
+      zoomOut: options.zoomOut
     };
 
     this._wasLocalized = false;
@@ -136,23 +136,31 @@ class Toolbar {
       });
     }
     // The non-button elements within the toolbar.
-    pageNumber.addEventListener("click", function () {
+    pageNumber.addEventListener("click", function() {
       this.select();
     });
-    pageNumber.addEventListener("change", function () {
+    pageNumber.addEventListener("change", function() {
       self.eventBus.dispatch("pagenumberchanged", {
         source: self,
-        value: this.value,
+        value: this.value
       });
     });
 
-    scaleSelect.addEventListener("change", function () {
+    scaleSelect.addEventListener("change", function() {
+      console.log(this.value);
+      // TODO: possible values:
+      // auto
+      // page-actual
+      // page-fit
+      // page-width
+      // custom
+      // page_scale_percent
       if (this.value === "custom") {
         return;
       }
       self.eventBus.dispatch("scalechanged", {
         source: self,
-        value: this.value,
+        value: this.value
       });
     });
     // Suppress context menus for some controls.
@@ -236,7 +244,7 @@ class Toolbar {
       l10n.get("page_scale_auto"),
       l10n.get("page_scale_actual"),
       l10n.get("page_scale_fit"),
-      l10n.get("page_scale_width"),
+      l10n.get("page_scale_width")
     ]);
 
     // The temporary canvas is used to measure text length in the DOM.
