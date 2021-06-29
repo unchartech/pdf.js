@@ -21,6 +21,7 @@ import Fuse from "./fuse.esm.js";
 
 const FUSE_OPTIONS = {
   includeScore: true,
+  threshold: 0.5,
 };
 
 const SPLIT_LETTER = " ";
@@ -92,6 +93,8 @@ class FuseSearch {
     this._fuse = new Fuse(this._content_list, FUSE_OPTIONS);
     this._results = this._fuse.search(query);
     this._result = this._results[0].item;
+
+    console.log(this._results);
 
     return this._results.length ? this._content.indexOf(this._result) : -1;
   }

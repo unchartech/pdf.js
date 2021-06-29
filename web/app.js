@@ -2654,8 +2654,8 @@ function webViewerFind(evt) {
     entireWord: evt.entireWord,
     highlightAll: evt.highlightAll,
     findPrevious: evt.findPrevious,
-    searchPage: evt.searchPage,
-    fuseSearch: evt.fuseSearch
+    searchPage: evt.searchPage, // TODO: change page if fuseSearch
+    fuseSearch: evt.fuseSearch, // TODO: true for fuseSearch
   });
 }
 
@@ -2668,7 +2668,7 @@ function webViewerFindFromUrlHash(evt) {
     highlightAll: true,
     findPrevious: false,
     fuseSearch: false,
-    searchPage: null
+    searchPage: null,
   });
 }
 
