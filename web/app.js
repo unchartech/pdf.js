@@ -2632,7 +2632,7 @@ function webViewerFindFromUrlHash(evt) {
     highlightAll: true,
     findPrevious: false,
     fuseSearch: false,
-    searchPage: null
+    searchPage: null,
   });
 }
 
