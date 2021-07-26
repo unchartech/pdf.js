@@ -252,6 +252,7 @@ const PDFViewerApplication = {
   eventBus: null,
   /** @type {IL10n} */
   l10n: null,
+  pdfBugEnabled: true,
   isInitialViewSet: false,
   downloadComplete: false,
   isViewerEmbedded: window.parent !== window,
@@ -2654,8 +2655,8 @@ function webViewerFind(evt) {
     entireWord: evt.entireWord,
     highlightAll: evt.highlightAll,
     findPrevious: evt.findPrevious,
-    searchPage: evt.searchPage, // TODO: change page if fuseSearch
-    fuseSearch: evt.fuseSearch, // TODO: true for fuseSearch
+    searchPage: 5, //evt.searchPage, // TODO: change page if fuseSearch
+    fuseSearch: true, //evt.fuseSearch, // TODO: true for fuseSearch
   });
 }
 

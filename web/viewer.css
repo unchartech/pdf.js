@@ -820,7 +820,7 @@ select {
 
 #sidebarContainer {
   position: absolute;
-  top: 32px;
+  top: 50px;
   bottom: 0;
   width: var(--sidebar-width);
   visibility: hidden;
@@ -977,12 +977,13 @@ html[dir='rtl'] #sidebarResizer {
 .findbar,
 .secondaryToolbar {
   position: relative;
-  height: 32px;
+  height: 50px;
   background-color: var(--toolbar-bg-color);
   box-shadow: 0 1px 0 var(--toolbar-border-color);
 }
 
 #toolbarViewer {
+  padding: 8px 0;
   height: 32px;
 }
 
@@ -1073,7 +1074,7 @@ html[dir='rtl'] #outerContainer.sidebarOpen #loadingBar {
 
 .findbar,
 .secondaryToolbar {
-  top: 32px;
+  top: 50px;
   position: absolute;
   z-index: 10000;
   height: auto;

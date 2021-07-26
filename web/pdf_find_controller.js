@@ -94,8 +94,6 @@ class FuseSearch {
     this._results = this._fuse.search(query);
     this._result = this._results[0].item;
 
-    console.log(this._results);
-
     return this._results.length ? this._content.indexOf(this._result) : -1;
   }
 
