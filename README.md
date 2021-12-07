@@ -10,6 +10,8 @@ rendering PDFs.
 
 Use `gulp generic-zip` for making `pdfviewer.zip`.
 
+Run `gulp server`
+Open `http://localhost:8888/web/viewer.html`
 ## Contributing
 
 PDF.js is an open source project and always looking for more contributors. To
