@@ -8,7 +8,7 @@ rendering PDFs.
 
 # Fork changes
 
-Use `gulp generic-zip` for making `pdfviewer.zip`.
+Use `npx gulp generic-zip` for making `pdfviewer.zip`.
 
-Run `gulp server`
+Run `npx gulp server`
 Open `http://localhost:8888/web/viewer.html`
