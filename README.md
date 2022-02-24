@@ -8,6 +8,6 @@ rendering PDFs.
 
 # Fork changes
 
-Use `gulp ыукмук` for development.
+Use `gulp server` for development.
 
 Use `gulp generic-zip` for making `pdfviewer.zip`.

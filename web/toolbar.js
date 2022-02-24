@@ -147,7 +147,6 @@ class Toolbar {
     });
 
     scaleSelect.addEventListener("change", function() {
-      console.log(this.value);
       // TODO: possible values:
       // auto
       // page-actual

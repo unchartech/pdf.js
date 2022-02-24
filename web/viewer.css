@@ -20,7 +20,7 @@
   right: 0;
   bottom: 0;
   overflow: hidden;
-  opacity: 0.2;
+  opacity: 0.4;
   line-height: 1;
 }
 
@@ -820,7 +820,7 @@ select {
 
 #sidebarContainer {
   position: absolute;
-  top: 50px;
+  top: 32px;
   bottom: 0;
   width: var(--sidebar-width);
   visibility: hidden;
@@ -977,13 +977,12 @@ html[dir='rtl'] #sidebarResizer {
 .findbar,
 .secondaryToolbar {
   position: relative;
-  height: 50px;
+  height: 32px;
   background-color: var(--toolbar-bg-color);
   box-shadow: 0 1px 0 var(--toolbar-border-color);
 }
 
 #toolbarViewer {
-  padding: 8px 0;
   height: 32px;
 }
 
@@ -1062,11 +1061,11 @@ html[dir='rtl'] #outerContainer.sidebarOpen #loadingBar {
   background: repeating-linear-gradient(
     135deg,
     var(--progressBar-indeterminate-blend-color) 0,
-    var(--progressBar-indeterminate-bg-color) 5px,
-    var(--progressBar-indeterminate-bg-color) 45px,
-    var(--progressBar-color) 55px,
-    var(--progressBar-color) 95px,
-    var(--progressBar-indeterminate-blend-color) 100px
+    var(--progressBar-indeterminate-bg-color) 50px,
+    var(--progressBar-indeterminate-bg-color) 450px,
+    var(--progressBar-color) 550px,
+    var(--progressBar-color) 950px,
+    var(--progressBar-indeterminate-blend-color) 1000px
   );
   -webkit-animation: progressIndeterminate 1s linear infinite;
   animation: progressIndeterminate 1s linear infinite;
@@ -1074,7 +1073,7 @@ html[dir='rtl'] #outerContainer.sidebarOpen #loadingBar {
 
 .findbar,
 .secondaryToolbar {
-  top: 50px;
+  top: 32px;
   position: absolute;
   z-index: 10000;
   height: auto;

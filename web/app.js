@@ -2655,8 +2655,8 @@ function webViewerFind(evt) {
     entireWord: evt.entireWord,
     highlightAll: evt.highlightAll,
     findPrevious: evt.findPrevious,
-    searchPage: 5, //evt.searchPage, // TODO: change page if fuseSearch
-    fuseSearch: true, //evt.fuseSearch, // TODO: true for fuseSearch
+    searchPage: evt.searchPage,
+    fuseSearch: evt.fuseSearch,
   });
 }
 
