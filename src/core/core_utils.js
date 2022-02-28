@@ -16,11 +16,14 @@
 import {
   assert,
   BaseException,
-  bytesToString,
+  FontType,
   objectSize,
+  StreamType,
   stringToPDFString,
+  warn,
 } from "../shared/util.js";
-import { Dict, isName, isRef, isStream, RefSet } from "./primitives.js";
+import { Dict, isName, Ref, RefSet } from "./primitives.js";
+import { BaseStream } from "./base_stream.js";
 
 function getLookupTableFactory(initializer) {
   let lookup;
@@ -52,15 +55,78 @@ function getArrayLookupTableFactory(initializer) {
 
 class MissingDataException extends BaseException {
   constructor(begin, end) {
-    super(`Missing data [${begin}, ${end})`);
+    super(`Missing data [${begin}, ${end})`, "MissingDataException");
     this.begin = begin;
     this.end = end;
   }
 }
 
-class XRefEntryException extends BaseException {}
+class ParserEOFException extends BaseException {
+  constructor(msg) {
+    super(msg, "ParserEOFException");
+  }
+}
 
-class XRefParseException extends BaseException {}
+class XRefEntryException extends BaseException {
+  constructor(msg) {
+    super(msg, "XRefEntryException");
+  }
+}
+
+class XRefParseException extends BaseException {
+  constructor(msg) {
+    super(msg, "XRefParseException");
+  }
+}
+
+class DocStats {
+  constructor(handler) {
+    this._handler = handler;
+
+    this._streamTypes = new Set();
+    this._fontTypes = new Set();
+  }
+
+  _send() {
+    const streamTypes = Object.create(null),
+      fontTypes = Object.create(null);
+    for (const type of this._streamTypes) {
+      streamTypes[type] = true;
+    }
+    for (const type of this._fontTypes) {
+      fontTypes[type] = true;
+    }
+    this._handler.send("DocStats", { streamTypes, fontTypes });
+  }
+
+  addStreamType(type) {
+    if (
+      typeof PDFJSDev === "undefined" ||
+      PDFJSDev.test("!PRODUCTION || TESTING")
+    ) {
+      assert(StreamType[type] === type, 'addStreamType: Invalid "type" value.');
+    }
+    if (this._streamTypes.has(type)) {
+      return;
+    }
+    this._streamTypes.add(type);
+    this._send();
+  }
+
+  addFontType(type) {
+    if (
+      typeof PDFJSDev === "undefined" ||
+      PDFJSDev.test("!PRODUCTION || TESTING")
+    ) {
+      assert(FontType[type] === type, 'addFontType: Invalid "type" value.');
+    }
+    if (this._fontTypes.has(type)) {
+      return;
+    }
+    this._fontTypes.add(type);
+    this._send();
+  }
+}
 
 /**
  * Get the value of an inheritable property.
@@ -145,7 +211,7 @@ function toRomanNumerals(number, lowerCase = false) {
   number %= 10;
   romanBuf.push(ROMAN_NUMBER_MAP[10 + pos]);
   // Ones
-  romanBuf.push(ROMAN_NUMBER_MAP[20 + number]);
+  romanBuf.push(ROMAN_NUMBER_MAP[20 + number]); // eslint-disable-line unicorn/no-array-push-push
 
   const romanStr = romanBuf.join("");
   return lowerCase ? romanStr.toLowerCase() : romanStr;
@@ -194,7 +260,7 @@ function isWhiteSpace(ch) {
  * each part of the path.
  */
 function parseXFAPath(path) {
-  const positionPattern = /(.+)\[([0-9]+)\]$/;
+  const positionPattern = /(.+)\[(\d+)\]$/;
   return path.split(".").map(component => {
     const m = component.match(positionPattern);
     if (m) {
@@ -250,7 +316,7 @@ function _collectJS(entry, xref, list, parents) {
   }
 
   let parent = null;
-  if (isRef(entry)) {
+  if (entry instanceof Ref) {
     if (parents.has(entry)) {
       // If we've already found entry then we've a cycle.
       return;
@@ -264,15 +330,15 @@ function _collectJS(entry, xref, list, parents) {
       _collectJS(element, xref, list, parents);
     }
   } else if (entry instanceof Dict) {
-    if (isName(entry.get("S"), "JavaScript") && entry.has("JS")) {
+    if (isName(entry.get("S"), "JavaScript")) {
       const js = entry.get("JS");
       let code;
-      if (isStream(js)) {
-        code = bytesToString(js.getBytes());
-      } else {
+      if (js instanceof BaseStream) {
+        code = js.getString();
+      } else if (typeof js === "string") {
         code = js;
       }
-      code = stringToPDFString(code);
+      code = code && stringToPDFString(code);
       if (code) {
         list.push(code);
       }
@@ -376,8 +442,98 @@ function encodeToXmlString(str) {
   return buffer.join("");
 }
 
+function validateCSSFont(cssFontInfo) {
+  // See https://developer.mozilla.org/en-US/docs/Web/CSS/font-style.
+  const DEFAULT_CSS_FONT_OBLIQUE = "14";
+  // See https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight.
+  const DEFAULT_CSS_FONT_WEIGHT = "400";
+  const CSS_FONT_WEIGHT_VALUES = new Set([
+    "100",
+    "200",
+    "300",
+    "400",
+    "500",
+    "600",
+    "700",
+    "800",
+    "900",
+    "1000",
+    "normal",
+    "bold",
+    "bolder",
+    "lighter",
+  ]);
+
+  const { fontFamily, fontWeight, italicAngle } = cssFontInfo;
+
+  // See https://developer.mozilla.org/en-US/docs/Web/CSS/string.
+  if (/^".*"$/.test(fontFamily)) {
+    if (/[^\\]"/.test(fontFamily.slice(1, fontFamily.length - 1))) {
+      warn(`XFA - FontFamily contains some unescaped ": ${fontFamily}.`);
+      return false;
+    }
+  } else if (/^'.*'$/.test(fontFamily)) {
+    if (/[^\\]'/.test(fontFamily.slice(1, fontFamily.length - 1))) {
+      warn(`XFA - FontFamily contains some unescaped ': ${fontFamily}.`);
+      return false;
+    }
+  } else {
+    // See https://developer.mozilla.org/en-US/docs/Web/CSS/custom-ident.
+    for (const ident of fontFamily.split(/[ \t]+/)) {
+      if (/^(\d|(-(\d|-)))/.test(ident) || !/^[\w-\\]+$/.test(ident)) {
+        warn(
+          `XFA - FontFamily contains some invalid <custom-ident>: ${fontFamily}.`
+        );
+        return false;
+      }
+    }
+  }
+
+  const weight = fontWeight ? fontWeight.toString() : "";
+  cssFontInfo.fontWeight = CSS_FONT_WEIGHT_VALUES.has(weight)
+    ? weight
+    : DEFAULT_CSS_FONT_WEIGHT;
+
+  const angle = parseFloat(italicAngle);
+  cssFontInfo.italicAngle =
+    isNaN(angle) || angle < -90 || angle > 90
+      ? DEFAULT_CSS_FONT_OBLIQUE
+      : italicAngle.toString();
+
+  return true;
+}
+
+function recoverJsURL(str) {
+  // Attempt to recover valid URLs from `JS` entries with certain
+  // white-listed formats:
+  //  - window.open('http://example.com')
+  //  - app.launchURL('http://example.com', true)
+  //  - xfa.host.gotoURL('http://example.com')
+  const URL_OPEN_METHODS = ["app.launchURL", "window.open", "xfa.host.gotoURL"];
+  const regex = new RegExp(
+    "^\\s*(" +
+      URL_OPEN_METHODS.join("|").split(".").join("\\.") +
+      ")\\((?:'|\")([^'\"]*)(?:'|\")(?:,\\s*(\\w+)\\)|\\))",
+    "i"
+  );
+
+  const jsUrl = regex.exec(str);
+  if (jsUrl && jsUrl[2]) {
+    const url = jsUrl[2];
+    let newWindow = false;
+
+    if (jsUrl[3] === "true" && jsUrl[1] === "app.launchURL") {
+      newWindow = true;
+    }
+    return { url, newWindow };
+  }
+
+  return null;
+}
+
 export {
   collectActions,
+  DocStats,
   encodeToXmlString,
   escapePDFName,
   getArrayLookupTableFactory,
@@ -386,11 +542,14 @@ export {
   isWhiteSpace,
   log2,
   MissingDataException,
+  ParserEOFException,
   parseXFAPath,
   readInt8,
   readUint16,
   readUint32,
+  recoverJsURL,
   toRomanNumerals,
+  validateCSSFont,
   XRefEntryException,
   XRefParseException,
 };

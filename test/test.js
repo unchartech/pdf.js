@@ -24,90 +24,169 @@ var os = require("os");
 var puppeteer = require("puppeteer");
 var url = require("url");
 var testUtils = require("./testutils.js");
+const dns = require("dns");
+const readline = require("readline");
+const yargs = require("yargs");
+
+// Chrome uses host `127.0.0.1` in the browser's websocket endpoint URL while
+// Firefox uses `localhost`, which before Node.js 17 also resolved to the IPv4
+// address `127.0.0.1` by Node.js' DNS resolver. However, this behavior changed
+// in Node.js 17 where the default is to prefer an IPv6 address if one is
+// offered (which varies based on the OS and/or how the `localhost` hostname
+// resolution is configured), so it can now also resolve to `::1`. This causes
+// Firefox to not start anymore since it doesn't bind on the `::1` interface.
+// To avoid this, we switch Node.js' DNS resolver back to preferring IPv4
+// since we connect to a local browser anyway. Only do this for Node.js versions
+// that actually have this API since it got introduced in Node.js 14.18.0 and
+// it's not relevant for older versions anyway.
+if (dns.setDefaultResultOrder !== undefined) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 function parseOptions() {
-  function describeCheck(fn, text) {
-    fn.toString = function () {
-      return text;
-    };
-    return fn;
-  }
-
-  var yargs = require("yargs")
+  yargs
     .usage("Usage: $0")
-    .boolean([
-      "help",
-      "masterMode",
-      "reftest",
-      "unitTest",
-      "fontTest",
-      "noPrompts",
-      "noDownload",
-      "noChrome",
-      "downloadOnly",
-      "strictVerify",
-    ])
-    .string(["manifestFile", "port", "statsFile", "statsDelay", "testfilter"])
-    .alias("help", "h")
-    .alias("masterMode", "m")
-    .alias("testfilter", "t")
-    .describe("help", "Show this help message")
-    .describe("masterMode", "Run the script in master mode.")
-    .describe(
-      "noPrompts",
-      "Uses default answers (intended for CLOUD TESTS only!)."
-    )
-    .describe(
-      "manifestFile",
-      "A path to JSON file in the form of test_manifest.json"
-    )
-    .default("manifestFile", "test_manifest.json")
-    .describe(
-      "reftest",
-      "Automatically start reftest showing comparison " +
-        "test failures, if there are any."
-    )
-    .describe("testfilter", "Run specific reftest(s).")
-    .default("testfilter", [])
+    .option("downloadOnly", {
+      default: false,
+      describe: "Download test PDFs without running the tests.",
+      type: "boolean",
+    })
+    .option("fontTest", {
+      default: false,
+      describe: "Run the font tests.",
+      type: "boolean",
+    })
+    .option("help", {
+      alias: "h",
+      default: false,
+      describe: "Show this help message.",
+      type: "boolean",
+    })
+    .option("integration", {
+      default: false,
+      describe: "Run the integration tests.",
+      type: "boolean",
+    })
+    .option("manifestFile", {
+      default: "test_manifest.json",
+      describe: "A path to JSON file in the form of `test_manifest.json`.",
+      type: "string",
+    })
+    .option("masterMode", {
+      alias: "m",
+      default: false,
+      describe: "Run the script in master mode.",
+      type: "boolean",
+    })
+    .option("noChrome", {
+      default: false,
+      describe: "Skip Chrome when running tests.",
+      type: "boolean",
+    })
+    .option("noDownload", {
+      default: false,
+      describe: "Skip downloading of test PDFs.",
+      type: "boolean",
+    })
+    .option("noPrompts", {
+      default: false,
+      describe: "Uses default answers (intended for CLOUD TESTS only!).",
+      type: "boolean",
+    })
+    .option("port", {
+      default: 0,
+      describe: "The port the HTTP server should listen on.",
+      type: "number",
+    })
+    .option("reftest", {
+      default: false,
+      describe:
+        "Automatically start reftest showing comparison test failures, if there are any.",
+      type: "boolean",
+    })
+    .option("statsDelay", {
+      default: 0,
+      describe:
+        "The amount of time in milliseconds the browser should wait before starting stats.",
+      type: "number",
+    })
+    .option("statsFile", {
+      default: "",
+      describe: "The file where to store stats.",
+      type: "string",
+    })
+    .option("strictVerify", {
+      default: false,
+      describe: "Error if verifying the manifest files fails.",
+      type: "boolean",
+    })
+    .option("testfilter", {
+      alias: "t",
+      default: [],
+      describe: "Run specific reftest(s).",
+      type: "array",
+    })
     .example(
-      "$0 -t=issue5567 -t=issue5909",
-      "Run the reftest identified by issue5567 and issue5909."
+      "testfilter",
+      "$0 -t=issue5567 -t=issue5909\n" +
+        "Run the reftest identified by issue5567 and issue5909."
     )
-    .describe("port", "The port the HTTP server should listen on.")
-    .default("port", 0)
-    .describe("unitTest", "Run the unit tests.")
-    .describe("fontTest", "Run the font tests.")
-    .describe("noDownload", "Skips test PDFs downloading.")
-    .describe("noChrome", "Skip Chrome when running tests.")
-    .describe("downloadOnly", "Download test PDFs without running the tests.")
-    .describe("strictVerify", "Error if verifying the manifest files fails.")
-    .describe("statsFile", "The file where to store stats.")
-    .describe(
-      "statsDelay",
-      "The amount of time in milliseconds the browser " +
-        "should wait before starting stats."
-    )
-    .default("statsDelay", 0)
-    .check(
-      describeCheck(function (argv) {
-        return (
-          +argv.reftest + argv.unitTest + argv.fontTest + argv.masterMode <= 1
-        );
-      }, "--reftest, --unitTest, --fontTest and --masterMode must not be " +
-        "specified at the same time.")
-    )
-    .check(
-      describeCheck(function (argv) {
-        return !argv.noDownload || !argv.downloadOnly;
-      }, "--noDownload and --downloadOnly cannot be used together.")
-    )
-    .check(
-      describeCheck(function (argv) {
-        return !argv.masterMode || argv.manifestFile === "test_manifest.json";
-      }, "when --masterMode is specified --manifestFile shall be equal " +
-        "test_manifest.json")
-    );
-  var result = yargs.argv;
+    .option("unitTest", {
+      default: false,
+      describe: "Run the unit tests.",
+      type: "boolean",
+    })
+    .option("xfaOnly", {
+      default: false,
+      describe: "Only run the XFA reftest(s).",
+      type: "boolean",
+    })
+    .check(argv => {
+      if (
+        +argv.reftest + argv.unitTest + argv.fontTest + argv.masterMode <=
+        1
+      ) {
+        return true;
+      }
+      throw new Error(
+        "--reftest, --unitTest, --fontTest, and --masterMode must not be specified together."
+      );
+    })
+    .check(argv => {
+      if (
+        +argv.unitTest + argv.fontTest + argv.integration + argv.xfaOnly <=
+        1
+      ) {
+        return true;
+      }
+      throw new Error(
+        "--unitTest, --fontTest, --integration, and --xfaOnly must not be specified together."
+      );
+    })
+    .check(argv => {
+      if (argv.testfilter && argv.testfilter.length > 0 && argv.xfaOnly) {
+        throw new Error("--testfilter and --xfaOnly cannot be used together.");
+      }
+      return true;
+    })
+    .check(argv => {
+      if (!argv.noDownload || !argv.downloadOnly) {
+        return true;
+      }
+      throw new Error(
+        "--noDownload and --downloadOnly cannot be used together."
+      );
+    })
+    .check(argv => {
+      if (!argv.masterMode || argv.manifestFile === "test_manifest.json") {
+        return true;
+      }
+      throw new Error(
+        "when --masterMode is specified --manifestFile shall be equal to `test_manifest.json`."
+      );
+    });
+
+  const result = yargs.argv;
   if (result.help) {
     yargs.showHelp();
     process.exit(0);
@@ -151,14 +230,17 @@ function updateRefImages() {
     sync(false); // don't remove tmp/ for botio
     return;
   }
-  testUtils.confirm(
+
+  const reader = readline.createInterface(process.stdin, process.stdout);
+  reader.question(
     "Would you like to update the master copy in ref/? [yn] ",
-    function (confirmed) {
-      if (confirmed) {
+    function (answer) {
+      if (answer.toLowerCase() === "y") {
         sync(true);
       } else {
         console.log("  OK, not updating.");
       }
+      reader.close();
     }
   );
 }
@@ -227,11 +309,9 @@ function startRefTest(masterMode, showRefImages) {
     } else if (showRefImages && numEqFailures > 0) {
       console.log();
       console.log(
-        "Starting reftest harness to examine " +
-          numEqFailures +
-          " eq test failures."
+        `Starting reftest harness to examine ${numEqFailures} eq test failures.`
       );
-      examineRefImages(numEqFailures);
+      examineRefImages();
     }
   }
 
@@ -282,13 +362,16 @@ function startRefTest(masterMode, showRefImages) {
       }
       console.log("Temporary snapshot dir tmp/ is still around.");
       console.log("tmp/ can be removed if it has nothing you need.");
-      testUtils.confirm(
+
+      const reader = readline.createInterface(process.stdin, process.stdout);
+      reader.question(
         "SHOULD THIS SCRIPT REMOVE tmp/? THINK CAREFULLY [yn] ",
-        function (confirmed) {
-          if (confirmed) {
+        function (answer) {
+          if (answer.toLowerCase() === "y") {
             testUtils.removeDirSync(refsTmpDir);
           }
           setup();
+          reader.close();
         }
       );
     } else {
@@ -328,12 +411,16 @@ function handleSessionTimeout(session) {
 function getTestManifest() {
   var manifest = JSON.parse(fs.readFileSync(options.manifestFile));
 
-  var testFilter = options.testfilter.slice(0);
-  if (testFilter.length) {
+  const testFilter = options.testfilter.slice(0),
+    xfaOnly = options.xfaOnly;
+  if (testFilter.length || xfaOnly) {
     manifest = manifest.filter(function (item) {
       var i = testFilter.indexOf(item.id);
       if (i !== -1) {
         testFilter.splice(i, 1);
+        return true;
+      }
+      if (xfaOnly && item.enableXfa) {
         return true;
       }
       return false;
@@ -699,6 +786,7 @@ function makeTestUrl(startUrl) {
       `?browser=${encodeURIComponent(browserName)}` +
       `&manifestFile=${encodeURIComponent("/test/" + options.manifestFile)}` +
       `&testFilter=${JSON.stringify(options.testfilter)}` +
+      `&xfaOnly=${options.xfaOnly}` +
       `&delay=${options.statsDelay}` +
       `&masterMode=${options.masterMode}`;
     return startUrl + queryParameters;
@@ -808,8 +896,8 @@ function unitTestPostHandler(req, res) {
 }
 
 async function startBrowser(browserName, startUrl = "") {
-  const revisions = require("puppeteer/lib/cjs/puppeteer/revisions.js")
-    .PUPPETEER_REVISIONS;
+  const revisions =
+    require("puppeteer/lib/cjs/puppeteer/revisions.js").PUPPETEER_REVISIONS;
   const wantedRevision =
     browserName === "chrome" ? revisions.chromium : revisions.firefox;
 
@@ -856,6 +944,7 @@ async function startBrowser(browserName, startUrl = "") {
       "pdfjs.disabled": true,
       "browser.helperApps.neverAsk.saveToDisk": "application/pdf",
       // Avoid popup when saving is done
+      "browser.download.improvements_to_download_panel": false,
       "browser.download.panel.shown": true,
       // Save file in output
       "browser.download.folderList": 2,
@@ -874,7 +963,7 @@ async function startBrowser(browserName, startUrl = "") {
   if (startUrl) {
     const pages = await browser.pages();
     const page = pages[0];
-    await page.goto(startUrl, { timeout: 0 });
+    await page.goto(startUrl, { timeout: 0, waitUntil: "domcontentloaded" });
   }
 
   return browser;
@@ -909,7 +998,7 @@ function startBrowsers(initSessionCallback, makeStartUrl = null) {
         }
       })
       .catch(function (ex) {
-        console.log(`Error while starting ${browserName}: ${ex}`);
+        console.log(`Error while starting ${browserName}: ${ex.message}`);
         closeSession(browserName);
       });
   }

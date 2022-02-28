@@ -14,8 +14,9 @@
  */
 
 import { buildGetDocumentParams } from "./test_utils.js";
-import { EventBus } from "../../web/ui_utils.js";
+import { EventBus } from "../../web/event_utils.js";
 import { getDocument } from "../../src/display/api.js";
+import { isNodeJS } from "../../src/shared/is_node.js";
 import { PDFFindController } from "../../web/pdf_find_controller.js";
 import { SimpleLinkService } from "../../web/pdf_link_service.js";
 
@@ -69,14 +70,28 @@ async function initPdfFindController(filename) {
 function testSearch({
   eventBus,
   pdfFindController,
-  parameters,
+  state,
   matchesPerPage,
   selectedMatch,
   pageMatches = null,
   pageMatchesLength = null,
 }) {
   return new Promise(function (resolve) {
-    pdfFindController.executeCommand("find", parameters);
+    const eventState = Object.assign(
+      Object.create(null),
+      {
+        source: this,
+        type: "",
+        query: null,
+        caseSensitive: false,
+        entireWord: false,
+        phraseSearch: true,
+        findPrevious: false,
+        matchDiacritics: false,
+      },
+      state
+    );
+    eventBus.dispatch("find", eventState);
 
     // The `updatefindmatchescount` event is only emitted if the page contains
     // at least one match for the query, so the last non-zero item in the
@@ -142,12 +157,8 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "Dynamic",
-        caseSensitive: false,
-        entireWord: false,
-        phraseSearch: true,
-        findPrevious: false,
       },
       matchesPerPage: [11, 5, 0, 3, 0, 0, 0, 1, 1, 1, 0, 3, 4, 4],
       selectedMatch: {
@@ -166,11 +177,8 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "conference",
-        caseSensitive: false,
-        entireWord: false,
-        phraseSearch: true,
         findPrevious: true,
       },
       matchesPerPage: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5],
@@ -187,12 +195,9 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "Dynamic",
         caseSensitive: true,
-        entireWord: false,
-        phraseSearch: true,
-        findPrevious: false,
       },
       matchesPerPage: [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3],
       selectedMatch: {
@@ -210,12 +215,9 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "Government",
-        caseSensitive: false,
         entireWord: true,
-        phraseSearch: true,
-        findPrevious: false,
       },
       matchesPerPage: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
       selectedMatch: {
@@ -233,12 +235,9 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "alternate solution",
-        caseSensitive: false,
-        entireWord: false,
         phraseSearch: false,
-        findPrevious: false,
       },
       matchesPerPage: [0, 0, 0, 0, 0, 1, 0, 0, 4, 0, 0, 0, 0, 0],
       selectedMatch: {
@@ -256,20 +255,348 @@ describe("pdf_find_controller", function () {
     await testSearch({
       eventBus,
       pdfFindController,
-      parameters: {
+      state: {
         query: "fraction",
-        caseSensitive: false,
-        entireWord: false,
-        phraseSearch: true,
-        findPrevious: false,
       },
       matchesPerPage: [3],
       selectedMatch: {
         pageIndex: 0,
         matchIndex: 0,
       },
-      pageMatches: [[19, 48, 66]],
+      pageMatches: [[19, 46, 62]],
       pageMatchesLength: [[8, 8, 8]],
+    });
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "1/2",
+      },
+      matchesPerPage: [2],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[27, 54]],
+      pageMatchesLength: [[1, 1]],
+    });
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "½",
+      },
+      matchesPerPage: [2],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[27, 54]],
+      pageMatchesLength: [[1, 1]],
+    });
+  });
+
+  it("performs a normal search, where the text with diacritics is normalized", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController(
+      "french_diacritics.pdf"
+    );
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "a",
+      },
+      matchesPerPage: [6],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[0, 2, 4, 6, 8, 10]],
+      pageMatchesLength: [[1, 1, 1, 1, 1, 1]],
+    });
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "u",
+      },
+      matchesPerPage: [6],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[44, 46, 48, 50, 52, 54]],
+      pageMatchesLength: [[1, 1, 1, 1, 1, 1]],
+    });
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "ë",
+        matchDiacritics: true,
+      },
+      matchesPerPage: [2],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[28, 30]],
+      pageMatchesLength: [[1, 1]],
+    });
+  });
+
+  it("performs a search where one of the results contains an hyphen", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "optimiz",
+      },
+      matchesPerPage: [1, 4, 2, 3, 3, 0, 2, 9, 1, 0, 0, 6, 3, 4],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+    });
+  });
+
+  it("performs a search where the result is on two lines", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "user experience",
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[2743]],
+      pageMatchesLength: [[14]],
+    });
+  });
+
+  it("performs a search where the result is on two lines with a punctuation at eol", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "version.the",
+      },
+      matchesPerPage: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 1,
+        matchIndex: 0,
+      },
+      pageMatches: [[], [1493]],
+      pageMatchesLength: [[], [11]],
+    });
+  });
+
+  it("performs a search with a minus sign in the query", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "trace-based  just-in-time",
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [
+        [0],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [2087],
+      ],
+      pageMatchesLength: [
+        [24],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [24],
+      ],
+    });
+  });
+
+  it("performs a search with square brackets in the query", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "[Programming Languages]",
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[1501]],
+      pageMatchesLength: [[25]],
+    });
+  });
+
+  it("performs a search with parenthesis in the query", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "\t   (checks)",
+      },
+      matchesPerPage: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 1,
+        matchIndex: 0,
+      },
+      pageMatches: [[], [201]],
+      pageMatchesLength: [[], [9]],
+    });
+  });
+
+  it("performs a search with a final dot in the query", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    // The whitespace after the dot mustn't be matched.
+    const query = "complex applications.";
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query,
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[1946]],
+      pageMatchesLength: [[21]],
+    });
+  });
+
+  it("performs a search with a dot in the query and a missing whitespace", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+
+    // The whitespace after the dot must be matched.
+    const query = "complex applications.J";
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query,
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[1946]],
+      pageMatchesLength: [[23]],
+    });
+  });
+
+  it("performs a search with a dot followed by a whitespace in the query", async function () {
+    const { eventBus, pdfFindController } = await initPdfFindController();
+    const query = "complex applications. j";
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query,
+      },
+      matchesPerPage: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [[1946]],
+      pageMatchesLength: [[23]],
+    });
+  });
+
+  it("performs a search in a text containing diacritics before -\\n", async function () {
+    if (isNodeJS) {
+      pending("Linked test-cases are not supported in Node.js.");
+    }
+
+    const { eventBus, pdfFindController } = await initPdfFindController(
+      "issue14562.pdf"
+    );
+
+    await testSearch({
+      eventBus,
+      pdfFindController,
+      state: {
+        query: "ä",
+        matchDiacritics: true,
+      },
+      matchesPerPage: [80],
+      selectedMatch: {
+        pageIndex: 0,
+        matchIndex: 0,
+      },
+      pageMatches: [
+        [
+          299, 337, 414, 476, 623, 797, 978, 984, 1010, 1058, 1079, 1144, 1152,
+          1274, 1343, 1391, 1399, 1421, 1497, 1521, 1527, 1684, 1774, 1786,
+          1857, 1879, 1909, 1946, 2064, 2074, 2161, 2178, 2213, 2227, 2272,
+          2322, 2359, 2401, 2412, 2423, 2462, 2532, 2538, 2553, 2562, 2576,
+          2602, 2613, 2638, 2668, 2792, 2805, 2836, 2848, 2859, 2896, 2902,
+          2916, 2940, 2960, 3091, 3239, 3249, 3339, 3387, 3394, 3468, 3477,
+          3485, 3502, 3690, 3696, 3711, 3758, 3789, 3865, 3977, 4052, 4058,
+          4071,
+        ],
+      ],
+      pageMatchesLength: [
+        [
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        ],
+      ],
     });
   });
 });

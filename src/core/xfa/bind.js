@@ -22,12 +22,13 @@ import {
   $finalize,
   $getAttributeIt,
   $getChildren,
+  $getDataValue,
   $getParent,
   $getRealChildrenByNameIt,
-  $global,
   $hasSettableValue,
   $indexOf,
   $insertAt,
+  $isBindable,
   $isDataValue,
   $isDescendent,
   $namespaceId,
@@ -36,12 +37,15 @@ import {
   $setValue,
   $text,
   XFAAttribute,
+  XFAObjectArray,
   XmlObject,
 } from "./xfa_object.js";
 import { BindItems, Field, Items, SetProperty, Text } from "./template.js";
 import { createDataNode, searchNode } from "./som.js";
 import { NamespaceIds } from "./namespaces.js";
 import { warn } from "../../shared/util.js";
+
+const NS_DATASETS = NamespaceIds.datasets.id;
 
 function createText(content) {
   const node = new Text({});
@@ -54,12 +58,12 @@ class Binder {
     this.root = root;
     this.datasets = root.datasets;
     if (root.datasets && root.datasets.data) {
-      this.emptyMerge = false;
       this.data = root.datasets.data;
     } else {
-      this.emptyMerge = true;
       this.data = new XmlObject(NamespaceIds.datasets.id, "data");
     }
+    this.emptyMerge = this.data[$getChildren]().length === 0;
+
     this.root.form = this.form = root.template[$clone]();
   }
 
@@ -86,12 +90,12 @@ class Binder {
     // data node (through $data property): we'll use it
     // to save form data.
 
+    formNode[$data] = data;
     if (formNode[$hasSettableValue]()) {
       if (data[$isDataValue]()) {
-        const value = data[$content].trim();
+        const value = data[$getDataValue]();
         // TODO: use picture.
         formNode[$setValue](createText(value));
-        formNode[$data] = data;
       } else if (
         formNode instanceof Field &&
         formNode.ui &&
@@ -102,19 +106,17 @@ class Binder {
           .map(child => child[$content].trim())
           .join("\n");
         formNode[$setValue](createText(value));
-        formNode[$data] = data;
       } else if (this._isConsumeData()) {
         warn(`XFA - Nodes haven't the same type.`);
       }
     } else if (!data[$isDataValue]() || this._isMatchTemplate()) {
       this._bindElement(formNode, data);
-      formNode[$data] = data;
     } else {
       warn(`XFA - Nodes haven't the same type.`);
     }
   }
 
-  _findDataByNameToConsume(name, dataNode, global) {
+  _findDataByNameToConsume(name, isValue, dataNode, global) {
     if (!name) {
       return null;
     }
@@ -130,9 +132,16 @@ class Binder {
         /* allTransparent = */ false,
         /* skipConsumed = */ true
       );
-      match = generator.next().value;
-      if (match) {
-        return match;
+      // Try to find a match of the same kind.
+      while (true) {
+        match = generator.next().value;
+        if (!match) {
+          break;
+        }
+
+        if (isValue === match[$isDataValue]()) {
+          return match;
+        }
       }
       if (
         dataNode[$namespaceId] === NamespaceIds.datasets.id &&
@@ -149,21 +158,15 @@ class Binder {
 
     // Secondly, if global try to find it just under the root of datasets
     // (which is the location of global variables).
-    generator = this.datasets[$getRealChildrenByNameIt](
+    generator = this.data[$getRealChildrenByNameIt](
       name,
-      /* allTransparent = */ false,
+      /* allTransparent = */ true,
       /* skipConsumed = */ false
     );
 
-    while (true) {
-      match = generator.next().value;
-      if (!match) {
-        break;
-      }
-
-      if (match[$global]) {
-        return match;
-      }
+    match = generator.next().value;
+    if (match) {
+      return match;
     }
 
     // Thirdly, try to find it in attributes.
@@ -198,34 +201,36 @@ class Binder {
         continue;
       }
 
-      const [node] = searchNode(
+      const nodes = searchNode(
         this.root,
         dataNode,
         ref,
         false /* = dotDotAllowed */,
         false /* = useCache */
       );
-      if (!node) {
+      if (!nodes) {
         warn(`XFA - Invalid reference: ${ref}.`);
         continue;
       }
+      const [node] = nodes;
 
       if (!node[$isDescendent](this.data)) {
         warn(`XFA - Invalid node: must be a data node.`);
         continue;
       }
 
-      const [targetNode] = searchNode(
+      const targetNodes = searchNode(
         this.root,
         formNode,
         target,
         false /* = dotDotAllowed */,
         false /* = useCache */
       );
-      if (!targetNode) {
+      if (!targetNodes) {
         warn(`XFA - Invalid target: ${target}.`);
         continue;
       }
+      const [targetNode] = targetNodes;
 
       if (!targetNode[$isDescendent](formNode)) {
         warn(`XFA - Invalid target: must be a property or subproperty.`);
@@ -337,34 +342,36 @@ class Binder {
           continue;
         }
 
-        const [labelNode] = searchNode(
+        const labelNodes = searchNode(
           this.root,
           node,
           labelRef,
           true /* = dotDotAllowed */,
           false /* = useCache */
         );
-        if (!labelNode) {
+        if (!labelNodes) {
           warn(`XFA - Invalid label: ${labelRef}.`);
           continue;
         }
+        const [labelNode] = labelNodes;
 
         if (!labelNode[$isDescendent](this.datasets)) {
           warn(`XFA - Invalid label: must be a datasets child.`);
           continue;
         }
 
-        const [valueNode] = searchNode(
+        const valueNodes = searchNode(
           this.root,
           node,
           valueRef,
           true /* = dotDotAllowed */,
           false /* = useCache */
         );
-        if (!valueNode) {
+        if (!valueNodes) {
           warn(`XFA - Invalid value: ${valueRef}.`);
           continue;
         }
+        const [valueNode] = valueNodes;
 
         if (!valueNode[$isDescendent](this.datasets)) {
           warn(`XFA - Invalid value: must be a datasets child.`);
@@ -391,6 +398,8 @@ class Binder {
     if (matches.length > 1) {
       // Clone before binding to avoid bad state.
       baseClone = formNode[$clone]();
+      baseClone[$removeChild](baseClone.occur);
+      baseClone.occur = null;
     }
 
     this._bindValue(formNode, matches[0], picture);
@@ -408,9 +417,6 @@ class Binder {
     for (let i = 1, ii = matches.length; i < ii; i++) {
       const match = matches[i];
       const clone = baseClone[$clone]();
-      clone.occur.min = 1;
-      clone.occur.max = 1;
-      clone.occur.initial = 1;
       parent[name].push(clone);
       parent[$insertAt](pos + i, clone);
 
@@ -433,24 +439,49 @@ class Binder {
     const parent = formNode[$getParent]();
     const name = formNode[$nodeName];
 
-    for (let i = 0, ii = occur.initial; i < ii; i++) {
-      const clone = formNode[$clone]();
-      clone.occur.min = 1;
-      clone.occur.max = 1;
-      clone.occur.initial = 1;
-      parent[name].push(clone);
-      parent[$appendChild](clone);
+    if (!(parent[name] instanceof XFAObjectArray)) {
+      return;
+    }
+
+    let currentNumber;
+    if (formNode.name) {
+      currentNumber = parent[name].children.filter(
+        e => e.name === formNode.name
+      ).length;
+    } else {
+      currentNumber = parent[name].children.length;
+    }
+
+    const pos = parent[$indexOf](formNode) + 1;
+    const ii = occur.initial - currentNumber;
+    if (ii) {
+      const nodeClone = formNode[$clone]();
+      nodeClone[$removeChild](nodeClone.occur);
+      nodeClone.occur = null;
+      parent[name].push(nodeClone);
+      parent[$insertAt](pos, nodeClone);
+
+      for (let i = 1; i < ii; i++) {
+        const clone = nodeClone[$clone]();
+        parent[name].push(clone);
+        parent[$insertAt](pos + i, clone);
+      }
     }
   }
 
   _getOccurInfo(formNode) {
-    const { occur } = formNode;
-    const dataName = formNode.name;
-    if (!occur || !dataName) {
+    const { name, occur } = formNode;
+    if (!occur || !name) {
       return [1, 1];
     }
     const max = occur.max === -1 ? Infinity : occur.max;
     return [occur.min, max];
+  }
+
+  _setAndBind(formNode, dataNode) {
+    this._setProperties(formNode, dataNode);
+    this._bindItems(formNode, dataNode);
+    this._bindElement(formNode, dataNode);
   }
 
   _bindElement(formNode, dataNode) {
@@ -469,6 +500,33 @@ class Binder {
 
       if (this._mergeMode === undefined && child[$nodeName] === "subform") {
         this._mergeMode = child.mergeMode === "consumeData";
+
+        // XFA specs p. 182:
+        // The highest-level subform and the data node representing
+        // the current record are special; they are always
+        // bound even if their names don't match.
+        const dataChildren = dataNode[$getChildren]();
+        if (dataChildren.length > 0) {
+          this._bindOccurrences(child, [dataChildren[0]], null);
+        } else if (this.emptyMerge) {
+          const nsId =
+            dataNode[$namespaceId] === NS_DATASETS
+              ? -1
+              : dataNode[$namespaceId];
+          const dataChild = (child[$data] = new XmlObject(
+            nsId,
+            child.name || "root"
+          ));
+          dataNode[$appendChild](dataChild);
+          this._bindElement(child, dataChild);
+        }
+        continue;
+      }
+
+      if (!child[$isBindable]()) {
+        // The node cannot contain some new data so there is nothing
+        // to create in the data node.
+        continue;
       }
 
       let global = false;
@@ -478,6 +536,7 @@ class Binder {
       if (child.bind) {
         switch (child.bind.match) {
           case "none":
+            this._setAndBind(child, dataNode);
             continue;
           case "global":
             global = true;
@@ -485,6 +544,7 @@ class Binder {
           case "dataRef":
             if (!child.bind.ref) {
               warn(`XFA - ref is empty in node ${child[$nodeName]}.`);
+              this._setAndBind(child, dataNode);
               continue;
             }
             ref = child.bind.ref;
@@ -513,10 +573,19 @@ class Binder {
           // to have something to match with the given expression.
           // See http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.364.2157&rep=rep1&type=pdf#page=199
           match = createDataNode(this.data, dataNode, ref);
+          if (!match) {
+            // For example if the node contains a .(...) then it isn't
+            // findable.
+            // TODO: remove this when .(...) is implemented.
+            continue;
+          }
           if (this._isConsumeData()) {
             match[$consumed] = true;
           }
-          match = [match];
+
+          // Don't bind the value in newly created node because it's empty.
+          this._setAndBind(child, match);
+          continue;
         } else {
           if (this._isConsumeData()) {
             // Filter out consumed nodes.
@@ -535,7 +604,7 @@ class Binder {
         }
       } else {
         if (!child.name) {
-          this._bindElement(child, dataNode);
+          this._setAndBind(child, dataNode);
           continue;
         }
         if (this._isConsumeData()) {
@@ -545,9 +614,11 @@ class Binder {
           while (matches.length < max) {
             const found = this._findDataByNameToConsume(
               child.name,
+              child[$hasSettableValue](),
               dataNode,
               global
             );
+
             if (!found) {
               break;
             }
@@ -556,31 +627,48 @@ class Binder {
           }
           match = matches.length > 0 ? matches : null;
         } else {
+          // If we've an empty merge, there are no reason
+          // to make multiple bind so skip consumed nodes.
           match = dataNode[$getRealChildrenByNameIt](
             child.name,
             /* allTransparent = */ false,
-            /* skipConsumed = */ false
+            /* skipConsumed = */ this.emptyMerge
           ).next().value;
           if (!match) {
+            // If there is no match (no data) and `min === 0` then
+            // the container is entirely excluded.
+            // https://www.pdfa.org/norm-refs/XFA-3_3.pdf#G12.1428332
+            if (min === 0) {
+              uselessNodes.push(child);
+              continue;
+            }
             // We're in matchTemplate mode so create a node in data to reflect
             // what we've in template.
-            match = new XmlObject(dataNode[$namespaceId], child.name);
+            const nsId =
+              dataNode[$namespaceId] === NS_DATASETS
+                ? -1
+                : dataNode[$namespaceId];
+            match = child[$data] = new XmlObject(nsId, child.name);
+            if (this.emptyMerge) {
+              match[$consumed] = true;
+            }
             dataNode[$appendChild](match);
+
+            // Don't bind the value in newly created node because it's empty.
+            this._setAndBind(child, match);
+            continue;
+          }
+          if (this.emptyMerge) {
+            match[$consumed] = true;
           }
           match = [match];
         }
       }
 
       if (match) {
-        if (match.length < min) {
-          warn(
-            `XFA - Must have at least ${min} occurrences: ${formNode[$nodeName]}.`
-          );
-          continue;
-        }
         this._bindOccurrences(child, match, picture);
       } else if (min > 0) {
-        this._bindElement(child, dataNode);
+        this._setAndBind(child, dataNode);
       } else {
         uselessNodes.push(child);
       }

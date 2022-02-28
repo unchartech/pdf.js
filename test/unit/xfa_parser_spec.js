@@ -46,7 +46,7 @@ describe("XFAParser", function () {
           forbidden
         </dynamicRender>
       </acrobat7>
-      <autoSave>enabled</autoSave>      
+      <autoSave>enabled</autoSave>
       <submitUrl>
                  http://d.e.f
       </submitUrl>
@@ -256,6 +256,38 @@ describe("XFAParser", function () {
       expect(root[$dump]()).toEqual(expected);
     });
 
+    it("should parse a xfa document and parse CDATA when needed", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform>
+      <field>
+        <extras>
+          <exData contentType="text/html" name="foo">
+            <![CDATA[<body xmlns="http://www.w3.org/1999/xhtml">
+              <span>hello</span></body>]]>
+          </exData>
+        </extra>
+      </field>
+    </subform>
+  </template>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const exdata = searchNode(root, root, "foo")[0];
+      const body = exdata[$dump]().$content[$dump]();
+      const expected = {
+        $name: "body",
+        attributes: {},
+        children: [
+          { $content: "hello", $name: "span", attributes: {}, children: [] },
+        ],
+      };
+
+      expect(body).toEqual(expected);
+    });
+
     it("should parse a xfa document and apply some prototypes", function () {
       const xml = `
 <?xml version="1.0"?>
@@ -274,6 +306,56 @@ describe("XFAParser", function () {
       </field>
       <field>
         <font use="#id1" size="456pt" weight="bold" posture="normal">
+          <fill>
+            <color value="4,5,6"/>
+          </fill>
+          <extras id="id2"/>
+        </font>
+      </field>
+    </subform>
+  </template>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml)[$dump]();
+      let font = root.template.subform.field[0].font;
+      expect(font.typeface).toEqual("Foo");
+      expect(font.overline).toEqual(0);
+      expect(font.size).toEqual(123);
+      expect(font.weight).toEqual("bold");
+      expect(font.posture).toEqual("italic");
+      expect(font.fill.color.value).toEqual({ r: 1, g: 2, b: 3 });
+      expect(font.extras).toEqual(undefined);
+
+      font = root.template.subform.field[1].font;
+      expect(font.typeface).toEqual("Foo");
+      expect(font.overline).toEqual(0);
+      expect(font.size).toEqual(456);
+      expect(font.weight).toEqual("bold");
+      expect(font.posture).toEqual("normal");
+      expect(font.fill.color.value).toEqual({ r: 4, g: 5, b: 6 });
+      expect(font.extras.id).toEqual("id2");
+    });
+
+    it("should parse a xfa document and apply some prototypes through usehref", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform>
+      <proto>
+        <draw name="foo">
+          <font typeface="Foo" size="123pt" weight="bold" posture="italic">
+            <fill>
+              <color value="1,2,3"/>
+            </fill>
+          </font>
+        </draw>
+      </proto>
+      <field>
+        <font usehref=".#som($template.#subform.foo.#font)"/>
+      </field>
+      <field>
+        <font usehref=".#som($template.#subform.foo.#font)" size="456pt" weight="bold" posture="normal">
           <fill>
             <color value="4,5,6"/>
           </fill>
@@ -330,9 +412,9 @@ describe("XFAParser", function () {
       );
       expect(p[$text]()).toEqual(
         [
-          "The first line of this paragraph is indented a half-inch.\n",
-          "Successive lines are not indented.\n",
-          "This is the last line of the paragraph.\n",
+          " The first line of this paragraph is indented a half-inch.\n",
+          " Successive lines are not indented.\n",
+          " This is the last line of the paragraph.\n ",
         ].join("")
       );
     });
@@ -699,6 +781,127 @@ describe("XFAParser", function () {
       ).toBe("xyz");
     });
 
+    it("should make a basic binding and create a non-existing node", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="A" mergeMode="matchTemplate">
+      <subform name="B">
+        <field name="C">
+        </field>
+        <field name="D">
+          <value>
+            <text>foobar</text>
+          </value>
+        </field>
+      </subform>
+    </subform>
+  </template>
+  <xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">
+    <xfa:data>
+      <A>
+      </A>
+    </xfa:data>
+  </xfa:datasets>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const binder = new Binder(root);
+      const form = binder.bind();
+      const data = binder.getData();
+
+      expect(
+        searchNode(form, form, "A.B.D.value.text")[0][$dump]().$content
+      ).toBe("foobar");
+
+      const expected = {
+        $name: "A",
+        attributes: {},
+        children: [
+          {
+            $name: "B",
+            attributes: {},
+            children: [
+              {
+                $name: "C",
+                attributes: {},
+                children: [],
+              },
+              {
+                $name: "D",
+                attributes: {},
+                children: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(searchNode(data, data, "A")[0][$dump]()).toEqual(expected);
+    });
+
+    it("should make a basic binding and create a non-existing node with namespaceId equal to -1", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="A">
+      <subform name="B">
+        <field name="C">
+        </field>
+        <field name="D">
+          <value>
+            <text>foobar</text>
+          </value>
+        </field>
+      </subform>
+    </subform>
+  </template>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const binder = new Binder(root);
+      const form = binder.bind();
+      const data = binder.getData();
+
+      expect(
+        searchNode(form, form, "A.B.D.value.text")[0][$dump]().$content
+      ).toBe("foobar");
+
+      // Created nodes mustn't belong to xfa:datasets namespace.
+      const expected = {
+        $name: "A",
+        $ns: -1,
+        attributes: {},
+        children: [
+          {
+            $name: "B",
+            $ns: -1,
+            attributes: {},
+            children: [
+              {
+                $name: "C",
+                $ns: -1,
+                attributes: {},
+                children: [],
+              },
+              {
+                $name: "D",
+                $ns: -1,
+                attributes: {},
+                children: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(searchNode(data, data, "A")[0][$dump](/* hasNS */ true)).toEqual(
+        expected
+      );
+    });
+
     it("should make another basic binding", function () {
       const xml = `
 <?xml version="1.0"?>
@@ -1056,6 +1259,57 @@ describe("XFAParser", function () {
       ]);
     });
 
+    it("should make binding and bind items with a ref", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="main">
+      <field name="CardName">
+        <bind match="dataRef" ref="$data.main.value"/>
+        <bindItems ref="$data.main.ccs.cc[*]" labelRef="uiname" valueRef="token"/>
+        <ui>
+          <choiceList/>
+        </ui>
+      </field>
+    </subform>
+  </template>
+  <xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">
+    <xfa:data>
+      <main>
+        <value>VISA</value>
+        <ccs>
+          <cc uiname="Visa" token="VISA"/>
+          <cc uiname="Mastercard" token="MC"/>
+          <cc uiname="American Express" token="AMEX"/>
+        </ccs>
+        <CardName>MC</CardName>
+      </main>
+    </xfa:data>
+  </xfa:datasets>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const form = new Binder(root).bind();
+      expect(
+        searchNode(form, form, "subform.CardName.value.text").map(x =>
+          x[$text]()
+        )
+      ).toEqual(["VISA"]);
+      expect(
+        searchNode(form, form, "subform.CardName.items[*].text[*]").map(x =>
+          x[$text]()
+        )
+      ).toEqual([
+        "Visa",
+        "Mastercard",
+        "American Express",
+        "VISA",
+        "MC",
+        "AMEX",
+      ]);
+    });
+
     it("should make binding with occurrences in consumeData mode", function () {
       const xml = `
 <?xml version="1.0"?>
@@ -1147,5 +1401,141 @@ describe("XFAParser", function () {
         )
       ).toEqual(["item1", "item2", "item1", "item2"]);
     });
+
+    it("should make binding and create nodes in data with some bind tag", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="root" mergeMode="matchTemplate">
+      <subform name="A">
+        <occur max="-1"/>
+        <bind ref="$.root.foo[*]" match="dataRef"/>
+      </subform>
+      <subform name="B">
+        <occur max="2"/>
+        <bind ref="$.root.bar[2]" match="dataRef"/>
+      </subform>
+    </subform>
+  </template>
+  <xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">
+    <xfa:data>
+      <root>
+      </root>
+    </xfa:data>
+  </xfa:datasets>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const binder = new Binder(root);
+      binder.bind();
+      const data = binder.getData();
+
+      const expected = {
+        $name: "root",
+        children: [
+          {
+            $name: "root",
+            children: [
+              {
+                $name: "foo",
+                children: [],
+                attributes: {},
+              },
+              {
+                $name: "bar",
+                children: [],
+                attributes: {},
+              },
+              {
+                $name: "bar",
+                children: [],
+                attributes: {},
+              },
+              {
+                $name: "bar",
+                children: [],
+                attributes: {},
+              },
+            ],
+            attributes: {},
+          },
+        ],
+        attributes: {},
+      };
+
+      expect(searchNode(data, data, "root")[0][$dump]()).toEqual(expected);
+    });
+
+    it("should make a binding with a bindItems", function () {
+      const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="A" mergeMode="matchTemplate">
+      <subform name="B">
+        <field name="C">
+          <ui>
+            <choicelist/>
+          </ui>
+          <bindItems ref="xfa.datasets.foo.bar[*]" labelRef="$" valueRef="oof"/>
+        </field>
+      </subform>
+    </subform>
+  </template>
+  <xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">
+    <foo>
+      <bar oof="a">1</bar>
+      <bar oof="b">2</bar>
+      <bar oof="c">3</bar>
+      <bar oof="d">4</bar>
+      <bar oof="e">5</bar>
+    </foo>
+    <xfa:data>
+      <A><B></B></A>
+    </xfa:data>
+  </xfa:datasets>
+</xdp:xdp>
+      `;
+      const root = new XFAParser().parse(xml);
+      const form = new Binder(root).bind();
+
+      expect(
+        searchNode(form, form, "A.B.C.items[0].text[*]").map(
+          x => x[$dump]().$content
+        )
+      ).toEqual(["1", "2", "3", "4", "5"]);
+      expect(
+        searchNode(form, form, "A.B.C.items[1].text[*]").map(
+          x => x[$dump]().$content
+        )
+      ).toEqual(["a", "b", "c", "d", "e"]);
+    });
+  });
+
+  it("should make a binding with a element in an area", function () {
+    const xml = `
+<?xml version="1.0"?>
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+  <template xmlns="http://www.xfa.org/schema/xfa-template/3.3">
+    <subform name="A" mergeMode="matchTemplate">
+      <area>
+        <field name="B"/>
+      </area>
+    </subform>
+  </template>
+  <xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">
+    <xfa:data>
+      <A><B>foobar</B></A>
+    </xfa:data>
+  </xfa:datasets>
+</xdp:xdp>
+    `;
+    const root = new XFAParser().parse(xml);
+    const form = new Binder(root).bind();
+
+    expect(searchNode(form, form, "A..B..text")[0][$dump]().$content).toBe(
+      "foobar"
+    );
   });
 });

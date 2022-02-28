@@ -16,16 +16,13 @@
 import {
   backtrackBeforeAllVisibleElements,
   binarySearchFirstItem,
-  EventBus,
   getPageSizeInches,
   getVisibleElements,
   isPortraitOrientation,
   isValidRotation,
-  moveToEndOfArray,
-  waitOnEventOrTimeout,
-  WaitOnType,
+  parseQueryString,
+  removeNullCharacters,
 } from "../../web/ui_utils.js";
-import { isNodeJS } from "../../src/shared/is_node.js";
 
 describe("ui_utils", function () {
   describe("binary search", function () {
@@ -54,153 +51,10 @@ describe("ui_utils", function () {
       expect(binarySearchFirstItem([2, 3, 4], isGreater3)).toEqual(2);
       expect(binarySearchFirstItem([4, 5, 6], isGreater3)).toEqual(0);
     });
-  });
-
-  describe("EventBus", function () {
-    it("dispatch event", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function (evt) {
-        expect(evt).toEqual(undefined);
-        count++;
-      });
-      eventBus.dispatch("test");
-      expect(count).toEqual(1);
-    });
-    it("dispatch event with arguments", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function (evt) {
-        expect(evt).toEqual({ abc: 123 });
-        count++;
-      });
-      eventBus.dispatch("test", {
-        abc: 123,
-      });
-      expect(count).toEqual(1);
-    });
-    it("dispatch different event", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function () {
-        count++;
-      });
-      eventBus.dispatch("nottest");
-      expect(count).toEqual(0);
-    });
-    it("dispatch event multiple times", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.dispatch("test");
-      eventBus.on("test", function () {
-        count++;
-      });
-      eventBus.dispatch("test");
-      eventBus.dispatch("test");
-      expect(count).toEqual(2);
-    });
-    it("dispatch event to multiple handlers", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function () {
-        count++;
-      });
-      eventBus.on("test", function () {
-        count++;
-      });
-      eventBus.dispatch("test");
-      expect(count).toEqual(2);
-    });
-    it("dispatch to detached", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      const listener = function () {
-        count++;
-      };
-      eventBus.on("test", listener);
-      eventBus.dispatch("test");
-      eventBus.off("test", listener);
-      eventBus.dispatch("test");
-      expect(count).toEqual(1);
-    });
-    it("dispatch to wrong detached", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function () {
-        count++;
-      });
-      eventBus.dispatch("test");
-      eventBus.off("test", function () {
-        count++;
-      });
-      eventBus.dispatch("test");
-      expect(count).toEqual(2);
-    });
-    it("dispatch to detached during handling", function () {
-      const eventBus = new EventBus();
-      let count = 0;
-      const listener1 = function () {
-        eventBus.off("test", listener2);
-        count++;
-      };
-      const listener2 = function () {
-        eventBus.off("test", listener1);
-        count++;
-      };
-      eventBus.on("test", listener1);
-      eventBus.on("test", listener2);
-      eventBus.dispatch("test");
-      eventBus.dispatch("test");
-      expect(count).toEqual(2);
-    });
-
-    it("dispatch event to handlers with/without 'once' option", function () {
-      const eventBus = new EventBus();
-      let multipleCount = 0,
-        onceCount = 0;
-
-      eventBus.on("test", function () {
-        multipleCount++;
-      });
-      eventBus.on(
-        "test",
-        function () {
-          onceCount++;
-        },
-        { once: true }
-      );
-
-      eventBus.dispatch("test");
-      eventBus.dispatch("test");
-      eventBus.dispatch("test");
-
-      expect(multipleCount).toEqual(3);
-      expect(onceCount).toEqual(1);
-    });
-
-    it("should not re-dispatch to DOM", function (done) {
-      if (isNodeJS) {
-        pending("Document in not supported in Node.js.");
-      }
-      const eventBus = new EventBus();
-      let count = 0;
-      eventBus.on("test", function (evt) {
-        expect(evt).toEqual(undefined);
-        count++;
-      });
-      function domEventListener() {
-        done.fail("shall not dispatch DOM event.");
-      }
-      document.addEventListener("test", domEventListener);
-
-      eventBus.dispatch("test");
-
-      Promise.resolve().then(() => {
-        expect(count).toEqual(1);
-
-        document.removeEventListener("test", domEventListener);
-        done();
-      });
+    it("three numeric entries and a start index", function () {
+      expect(binarySearchFirstItem([0, 1, 2, 3, 4], isGreater3, 2)).toEqual(4);
+      expect(binarySearchFirstItem([2, 3, 4], isGreater3, 2)).toEqual(2);
+      expect(binarySearchFirstItem([4, 5, 6], isGreater3, 1)).toEqual(1);
     });
   });
 
@@ -254,128 +108,64 @@ describe("ui_utils", function () {
     });
   });
 
-  describe("waitOnEventOrTimeout", function () {
-    let eventBus;
-
-    beforeAll(function (done) {
-      eventBus = new EventBus();
-      done();
+  describe("parseQueryString", function () {
+    it("should parse one key/value pair", function () {
+      const parameters = parseQueryString("key1=value1");
+      expect(parameters.size).toEqual(1);
+      expect(parameters.get("key1")).toEqual("value1");
     });
 
-    afterAll(function () {
-      eventBus = null;
-    });
-
-    it("should reject invalid parameters", function (done) {
-      const invalidTarget = waitOnEventOrTimeout({
-        target: "window",
-        name: "DOMContentLoaded",
-      }).then(
-        function () {
-          throw new Error("Should reject invalid parameters.");
-        },
-        function (reason) {
-          expect(reason instanceof Error).toEqual(true);
-        }
+    it("should parse multiple key/value pairs", function () {
+      const parameters = parseQueryString(
+        "key1=value1&key2=value2&key3=value3"
       );
+      expect(parameters.size).toEqual(3);
+      expect(parameters.get("key1")).toEqual("value1");
+      expect(parameters.get("key2")).toEqual("value2");
+      expect(parameters.get("key3")).toEqual("value3");
+    });
 
-      const invalidName = waitOnEventOrTimeout({
-        target: eventBus,
-        name: "",
-      }).then(
-        function () {
-          throw new Error("Should reject invalid parameters.");
-        },
-        function (reason) {
-          expect(reason instanceof Error).toEqual(true);
-        }
+    it("should parse keys without values", function () {
+      const parameters = parseQueryString("key1");
+      expect(parameters.size).toEqual(1);
+      expect(parameters.get("key1")).toEqual("");
+    });
+
+    it("should decode encoded key/value pairs", function () {
+      const parameters = parseQueryString("k%C3%ABy1=valu%C3%AB1");
+      expect(parameters.size).toEqual(1);
+      expect(parameters.get("këy1")).toEqual("valuë1");
+    });
+
+    it("should convert keys to lowercase", function () {
+      const parameters = parseQueryString("Key1=Value1&KEY2=Value2");
+      expect(parameters.size).toEqual(2);
+      expect(parameters.get("key1")).toEqual("Value1");
+      expect(parameters.get("key2")).toEqual("Value2");
+    });
+  });
+
+  describe("removeNullCharacters", function () {
+    it("should not modify string without null characters", function () {
+      const str = "string without null chars";
+      expect(removeNullCharacters(str)).toEqual("string without null chars");
+    });
+
+    it("should modify string with null characters", function () {
+      const str = "string\x00With\x00Null\x00Chars";
+      expect(removeNullCharacters(str)).toEqual("stringWithNullChars");
+    });
+
+    it("should modify string with non-displayable characters", function () {
+      const str = Array.from(Array(32).keys())
+        .map(x => String.fromCharCode(x) + "a")
+        .join("");
+      // \x00 is replaced by an empty string.
+      const expected =
+        "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a";
+      expect(removeNullCharacters(str, /* replaceInvisible */ true)).toEqual(
+        expected
       );
-
-      const invalidDelay = waitOnEventOrTimeout({
-        target: eventBus,
-        name: "pagerendered",
-        delay: -1000,
-      }).then(
-        function () {
-          throw new Error("Should reject invalid parameters.");
-        },
-        function (reason) {
-          expect(reason instanceof Error).toEqual(true);
-        }
-      );
-
-      Promise.all([invalidTarget, invalidName, invalidDelay]).then(
-        done,
-        done.fail
-      );
-    });
-
-    it("should resolve on event, using the DOM", function (done) {
-      if (isNodeJS) {
-        pending("Document in not supported in Node.js.");
-      }
-      const button = document.createElement("button");
-
-      const buttonClicked = waitOnEventOrTimeout({
-        target: button,
-        name: "click",
-        delay: 10000,
-      });
-      // Immediately dispatch the expected event.
-      button.click();
-
-      buttonClicked.then(function (type) {
-        expect(type).toEqual(WaitOnType.EVENT);
-        done();
-      }, done.fail);
-    });
-
-    it("should resolve on timeout, using the DOM", function (done) {
-      if (isNodeJS) {
-        pending("Document in not supported in Node.js.");
-      }
-      const button = document.createElement("button");
-
-      const buttonClicked = waitOnEventOrTimeout({
-        target: button,
-        name: "click",
-        delay: 10,
-      });
-      // Do *not* dispatch the event, and wait for the timeout.
-
-      buttonClicked.then(function (type) {
-        expect(type).toEqual(WaitOnType.TIMEOUT);
-        done();
-      }, done.fail);
-    });
-
-    it("should resolve on event, using the EventBus", function (done) {
-      const pageRendered = waitOnEventOrTimeout({
-        target: eventBus,
-        name: "pagerendered",
-        delay: 10000,
-      });
-      // Immediately dispatch the expected event.
-      eventBus.dispatch("pagerendered");
-
-      pageRendered.then(function (type) {
-        expect(type).toEqual(WaitOnType.EVENT);
-        done();
-      }, done.fail);
-    });
-
-    it("should resolve on timeout, using the EventBus", function (done) {
-      const pageRendered = waitOnEventOrTimeout({
-        target: eventBus,
-        name: "pagerendered",
-        delay: 10,
-      });
-      // Do *not* dispatch the event, and wait for the timeout.
-
-      pageRendered.then(function (type) {
-        expect(type).toEqual(WaitOnType.TIMEOUT);
-        done();
-      }, done.fail);
     });
   });
 
@@ -469,7 +259,8 @@ describe("ui_utils", function () {
     // This is a reimplementation of getVisibleElements without the
     // optimizations.
     function slowGetVisibleElements(scroll, pages) {
-      const views = [];
+      const views = [],
+        ids = new Set();
       const { scrollLeft, scrollTop } = scroll;
       const scrollRight = scrollLeft + scroll.clientWidth;
       const scrollBottom = scrollTop + scroll.clientHeight;
@@ -507,9 +298,10 @@ describe("ui_utils", function () {
             percent,
             widthPercent: (fractionWidth * 100) | 0,
           });
+          ids.add(view.id);
         }
       }
-      return { first: views[0], last: views[views.length - 1], views };
+      return { first: views[0], last: views[views.length - 1], views, ids };
     }
 
     // This function takes a fixed layout of pages and compares the system under
@@ -671,6 +463,7 @@ describe("ui_utils", function () {
         first: undefined,
         last: undefined,
         views: [],
+        ids: new Set(),
       });
     });
 
@@ -687,6 +480,7 @@ describe("ui_utils", function () {
         first: undefined,
         last: undefined,
         views: [],
+        ids: new Set(),
       });
     });
 
@@ -830,46 +624,6 @@ describe("ui_utils", function () {
           backtrackBeforeAllVisibleElements(bsResult, pages, top2)
         ).toEqual(4);
       });
-    });
-  });
-
-  describe("moveToEndOfArray", function () {
-    it("works on empty arrays", function () {
-      const data = [];
-      moveToEndOfArray(data, function () {});
-      expect(data).toEqual([]);
-    });
-
-    it("works when moving everything", function () {
-      const data = [1, 2, 3, 4, 5];
-      moveToEndOfArray(data, function () {
-        return true;
-      });
-      expect(data).toEqual([1, 2, 3, 4, 5]);
-    });
-
-    it("works when moving some things", function () {
-      const data = [1, 2, 3, 4, 5];
-      moveToEndOfArray(data, function (x) {
-        return x % 2 === 0;
-      });
-      expect(data).toEqual([1, 3, 5, 2, 4]);
-    });
-
-    it("works when moving one thing", function () {
-      const data = [1, 2, 3, 4, 5];
-      moveToEndOfArray(data, function (x) {
-        return x === 1;
-      });
-      expect(data).toEqual([2, 3, 4, 5, 1]);
-    });
-
-    it("works when moving nothing", function () {
-      const data = [1, 2, 3, 4, 5];
-      moveToEndOfArray(data, function (x) {
-        return x === 0;
-      });
-      expect(data).toEqual([1, 2, 3, 4, 5]);
     });
   });
 });

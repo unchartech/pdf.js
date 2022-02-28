@@ -13,9 +13,10 @@
  * limitations under the License.
  */
 
+/** @typedef {import("./event_utils").EventBus} EventBus */
+
+import { apiPageLayoutToViewerModes, RenderingStates } from "./ui_utils.js";
 import { createPromiseCapability, shadow } from "pdfjs-lib";
-import { apiPageLayoutToSpreadMode } from "./ui_utils.js";
-import { RenderingStates } from "./pdf_rendering_queue.js";
 
 /**
  * @typedef {Object} PDFScriptingManagerOptions
@@ -46,7 +47,6 @@ class PDFScriptingManager {
 
     this._scripting = null;
     this._mouseState = Object.create(null);
-    this._pageEventsReady = false;
     this._ready = false;
 
     this._eventBus = eventBus;
@@ -97,7 +97,14 @@ class PDFScriptingManager {
     if (pdfDocument !== this._pdfDocument) {
       return; // The document was closed while the data resolved.
     }
-    this._scripting = this._createScripting();
+    try {
+      this._scripting = this._createScripting();
+    } catch (error) {
+      console.error(`PDFScriptingManager.setDocument: "${error?.message}".`);
+
+      await this._destroyScripting();
+      return;
+    }
 
     this._internalEvents.set("updatefromsandbox", event => {
       if (event?.source !== window) {
@@ -271,7 +278,7 @@ class PDFScriptingManager {
       this._pdfViewer.isInPresentationMode ||
       this._pdfViewer.isChangingPresentationMode;
 
-    const { id, command, value } = detail;
+    const { id, siblings, command, value } = detail;
     if (!id) {
       switch (command) {
         case "clear":
@@ -281,7 +288,11 @@ class PDFScriptingManager {
           console.error(value);
           break;
         case "layout":
-          this._pdfViewer.spreadMode = apiPageLayoutToSpreadMode(value);
+          if (isInPresentationMode) {
+            return;
+          }
+          const modes = apiPageLayoutToViewerModes(value);
+          this._pdfViewer.spreadMode = modes.spreadMode;
           break;
         case "page-num":
           this._pdfViewer.currentPageNumber = value + 1;
@@ -299,6 +310,33 @@ class PDFScriptingManager {
           }
           this._pdfViewer.currentScaleValue = value;
           break;
+        case "SaveAs":
+          this._eventBus.dispatch("save", { source: this });
+          break;
+        case "FirstPage":
+          this._pdfViewer.currentPageNumber = 1;
+          break;
+        case "LastPage":
+          this._pdfViewer.currentPageNumber = this._pdfViewer.pagesCount;
+          break;
+        case "NextPage":
+          this._pdfViewer.nextPage();
+          break;
+        case "PrevPage":
+          this._pdfViewer.previousPage();
+          break;
+        case "ZoomViewIn":
+          if (isInPresentationMode) {
+            return;
+          }
+          this._pdfViewer.increaseScale();
+          break;
+        case "ZoomViewOut":
+          if (isInPresentationMode) {
+            return;
+          }
+          this._pdfViewer.decreaseScale();
+          break;
       }
       return;
     }
@@ -308,14 +346,18 @@ class PDFScriptingManager {
         return;
       }
     }
+    delete detail.id;
+    delete detail.siblings;
 
-    const element = document.getElementById(id);
-    if (element) {
-      element.dispatchEvent(new CustomEvent("updatefromsandbox", { detail }));
-    } else {
-      delete detail.id;
-      // The element hasn't been rendered yet, use the AnnotationStorage.
-      this._pdfDocument?.annotationStorage.setValue(id, detail);
+    const ids = siblings ? [id, ...siblings] : [id];
+    for (const elementId of ids) {
+      const element = document.getElementById(elementId);
+      if (element) {
+        element.dispatchEvent(new CustomEvent("updatefromsandbox", { detail }));
+      } else {
+        // The element hasn't been rendered yet, use the AnnotationStorage.
+        this._pdfDocument?.annotationStorage.setValue(elementId, detail);
+      }
     }
   }
 
@@ -328,10 +370,8 @@ class PDFScriptingManager {
 
     if (initialize) {
       this._closeCapability = createPromiseCapability();
-
-      this._pageEventsReady = true;
     }
-    if (!this._pageEventsReady) {
+    if (!this._closeCapability) {
       return; // Scripting isn't fully initialized yet.
     }
     const pageView = this._pdfViewer.getPageView(/* index = */ pageNumber - 1);
@@ -368,7 +408,7 @@ class PDFScriptingManager {
     const pdfDocument = this._pdfDocument,
       visitedPages = this._visitedPages;
 
-    if (!this._pageEventsReady) {
+    if (!this._closeCapability) {
       return; // Scripting isn't fully initialized yet.
     }
     if (this._pageOpenPending.has(pageNumber)) {
@@ -476,7 +516,6 @@ class PDFScriptingManager {
 
     this._scripting = null;
     delete this._mouseState.isDown;
-    this._pageEventsReady = false;
     this._ready = false;
 
     this._destroyCapability?.resolve();

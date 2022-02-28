@@ -15,13 +15,12 @@
 /* globals __non_webpack_require__ */
 
 import {
-  createObjectURL,
   FONT_IDENTITY_MATRIX,
   IDENTITY_MATRIX,
   ImageKind,
-  isNum,
   OPS,
   TextRenderingMode,
+  unreachable,
   Util,
   warn,
 } from "../shared/util.js";
@@ -29,11 +28,16 @@ import { DOMSVGFactory } from "./display_utils.js";
 import { isNodeJS } from "../shared/is_node.js";
 
 /** @type {any} */
-let SVGGraphics = function () {
-  throw new Error("Not implemented: SVGGraphics");
+let SVGGraphics = class {
+  constructor() {
+    unreachable("Not implemented: SVGGraphics");
+  }
 };
 
-if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
+if (
+  typeof PDFJSDev === "undefined" ||
+  PDFJSDev.test("!PRODUCTION || GENERIC")
+) {
   const SVG_DEFAULTS = {
     fontStyle: "normal",
     fontWeight: "normal",
@@ -44,16 +48,39 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
   const LINE_CAP_STYLES = ["butt", "round", "square"];
   const LINE_JOIN_STYLES = ["miter", "round", "bevel"];
 
+  const createObjectURL = function (
+    data,
+    contentType = "",
+    forceDataSchema = false
+  ) {
+    if (
+      URL.createObjectURL &&
+      typeof Blob !== "undefined" &&
+      !forceDataSchema
+    ) {
+      return URL.createObjectURL(new Blob([data], { type: contentType }));
+    }
+    // Blob/createObjectURL is not available, falling back to data schema.
+    const digits =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+
+    let buffer = `data:${contentType};base64,`;
+    for (let i = 0, ii = data.length; i < ii; i += 3) {
+      const b1 = data[i] & 0xff;
+      const b2 = data[i + 1] & 0xff;
+      const b3 = data[i + 2] & 0xff;
+      const d1 = b1 >> 2,
+        d2 = ((b1 & 3) << 4) | (b2 >> 4);
+      const d3 = i + 1 < ii ? ((b2 & 0xf) << 2) | (b3 >> 6) : 64;
+      const d4 = i + 2 < ii ? b3 & 0x3f : 64;
+      buffer += digits[d1] + digits[d2] + digits[d3] + digits[d4];
+    }
+    return buffer;
+  };
+
   const convertImgDataToPng = (function () {
     const PNG_HEADER = new Uint8Array([
-      0x89,
-      0x50,
-      0x4e,
-      0x47,
-      0x0d,
-      0x0a,
-      0x1a,
-      0x0a,
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
     ]);
     const CHUNK_WRAPPER_SIZE = 12;
 
@@ -438,8 +465,7 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
   let maskCount = 0;
   let shadingCount = 0;
 
-  // eslint-disable-next-line no-shadow
-  SVGGraphics = class SVGGraphics {
+  SVGGraphics = class {
     constructor(commonObjs, objs, forceDataSchema = false) {
       this.svgFactory = new DOMSVGFactory();
 
@@ -810,7 +836,7 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
           // Word break
           x += fontDirection * wordSpacing;
           continue;
-        } else if (isNum(glyph)) {
+        } else if (typeof glyph === "number") {
           x += (spacingDir * glyph * fontSize) / 1000;
           continue;
         }
@@ -1115,8 +1141,10 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
       const paintType = args[7];
 
       const tilingId = `shading${shadingCount++}`;
-      const [tx0, ty0] = Util.applyTransform([x0, y0], matrix);
-      const [tx1, ty1] = Util.applyTransform([x1, y1], matrix);
+      const [tx0, ty0, tx1, ty1] = Util.normalizeRect([
+        ...Util.applyTransform([x0, y0], matrix),
+        ...Util.applyTransform([x1, y1], matrix),
+      ]);
       const [xscale, yscale] = Util.singularValueDecompose2dScale(matrix);
       const txstep = xstep * xscale;
       const tystep = ystep * yscale;
@@ -1160,6 +1188,9 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
      * @private
      */
     _makeShadingPattern(args) {
+      if (typeof args === "string") {
+        args = this.objs.get(args);
+      }
       switch (args[0]) {
         case "RadialAxial":
           const shadingId = `shading${shadingCount++}`;
@@ -1370,9 +1401,9 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
         // The previous clipping group content can go out of order -- resetting
         // cached clipGroups.
         current.clipGroup = null;
-        this.extraStack.forEach(function (prev) {
+        for (const prev of this.extraStack) {
           prev.clipGroup = null;
-        });
+        }
         // Intersect with the previous clipping path.
         clipPath.setAttributeNS(null, "clip-path", current.activeClipUrl);
       }

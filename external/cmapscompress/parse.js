@@ -28,15 +28,16 @@ exports.parseAdobeCMap = function (content) {
     usecmap: null,
     body: [],
   };
-  m = /\/CMapType\s+(\d+)+\s+def\b/.exec(body);
+  m = /\/CMapType\s+(\d+)\s+def\b/.exec(body);
   result.type = +m[1];
-  m = /\/WMode\s+(\d+)+\s+def\b/.exec(body);
+  m = /\/WMode\s+(\d+)\s+def\b/.exec(body);
   result.wmode = +m[1];
   m = /\/([\w-]+)\s+usecmap\b/.exec(body);
   if (m) {
     result.usecmap = m[1];
   }
-  const re = /(\d+)\s+(begincodespacerange|beginnotdefrange|begincidchar|begincidrange|beginbfchar|beginbfrange)\n([\s\S]*?)\n(endcodespacerange|endnotdefrange|endcidchar|endcidrange|endbfchar|endbfrange)/g;
+  const re =
+    /(\d+)\s+(begincodespacerange|beginnotdefrange|begincidchar|begincidrange|beginbfchar|beginbfrange)\n([\s\S]*?)\n(endcodespacerange|endnotdefrange|endcidchar|endcidrange|endbfchar|endbfrange)/g;
   while ((m = re.exec(body))) {
     const lines = m[3].toLowerCase().split("\n");
 
