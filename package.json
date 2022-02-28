@@ -65,7 +65,7 @@
     "yargs": "^17.3.1"
   },
   "scripts": {
-    "postinstall": "cross-env PUPPETEER_PRODUCT=firefox node node_modules/puppeteer/install.js"
+    "postinstall": "cross-env PUPPETEER_PRODUCT=firefox node node_modules/puppeteer/install.js",
     "fuse-test": "jest --watch",
     "test": "gulp npm-test"
   },

@@ -2215,7 +2215,7 @@ gulp.task(
 );
 
 gulp.task(
-  "dist",
+  "dist-repo-git",
   gulp.series("dist-pre", function createDist(done) {
     const VERSION = getVersionJSON().version;
 
@@ -2255,10 +2255,10 @@ gulp.task(
   })
 );
 
-gulp.task('dist-zip', function () {
-  return gulp.src(GENERIC_DIR + './**')
-    .pipe(zip('pdfviewer.zip'))
-    .pipe(gulp.dest('./build'));
+gulp.task("dist-zip", function () {
+  return gulp.src(GENERIC_DIR + "./**")
+    .pipe(zip("pdfviewer.zip"))
+    .pipe(gulp.dest("./build"));
 });
 
 gulp.task("dist", gulp.series("dist-repo-git"));
