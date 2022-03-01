@@ -35,7 +35,7 @@ const SPLIT_LETTER = " ";
  */
 class FuseSearch {
   constructor(content) {
-    this._content = content;
+    this._content = content.toLowerCase();
     this._content_list = [];
   }
 
@@ -96,9 +96,14 @@ class FuseSearch {
     // has a few matches, try to find more relevant
     this._fuse = new Fuse(this._content_list, FUSE_OPTIONS);
     this._results = this._fuse.search(query);
-    this._result = this._results[0].item;
 
-    return this._results.length ? this._content.indexOf(this._result) : -1;
+    if (this._results.length) {
+      this._result = this._results[0].item;
+      return this._content.indexOf(this._result);
+    } else {
+      this._result = undefined;
+      return -1;
+    }
   }
 
   get_result_length() {
@@ -600,21 +605,15 @@ class PDFFindController {
     return true;
   }
 
-  /*
-   _calculatePhraseMatch(
-    query,
-    pageIndex,
-    pageContent,
-    pageDiffs,
-    entireWord,
-    fuseSearch
-  ) {
+  _calculateRegExpMatch(query, entireWord, pageIndex, pageContent) {
     const matches = [],
       matchesLength = [];
-    let queryLen = query.length;
+
+    let queryLen = this._state.query.length;
+    // let match;
 
     // [thread] logic changed by search only one page
-    const { searchPage } = this.state;
+    const { searchPage } = this._state;
     if (searchPage && pageIndex !== searchPage) {
       this._pageMatches[pageIndex] = [];
       this._pageMatchesLength[pageIndex] = [];
@@ -622,65 +621,38 @@ class PDFFindController {
     }
 
     let matchIdx = -queryLen;
-    let fuseSearchStart = fuseSearch;
-    while (true) {
-      matchIdx = pageContent.indexOf(query, matchIdx + queryLen);
-
-      if (matchIdx === -1 && fuseSearchStart) {
-        const options = {
-          includeScore: true,
-        };
-
-        // Create a new instance of Fuse
-        const fuse = new FuseSearch(pageContent);
-        matchIdx = fuse.search(query.toLowerCase());
-        queryLen = fuse.get_result_length();
-        fuseSearchStart = false;
-      }
-
-      if (matchIdx === -1) {
-        break;
-      }
-
-      if (entireWord && !this._isEntireWord(pageContent, matchIdx, queryLen)) {
-        continue;
-      }
-
-      const originalMatchIdx = getOriginalIndex(matchIdx, pageDiffs),
-        matchEnd = matchIdx + queryLen - 1,
-        originalQueryLen =
-          getOriginalIndex(matchEnd, pageDiffs) - originalMatchIdx + 1;
-
-      matches.push(originalMatchIdx);
-      matchesLength.push(originalQueryLen);
-    }
-   */
-
-  _calculateRegExpMatch(query, entireWord, pageIndex, pageContent) {
-    const matches = [],
-      matchesLength = [];
-
     const diffs = this._pageDiffs[pageIndex];
-    let match;
-    while ((match = query.exec(pageContent)) !== null) {
-      if (
-        entireWord &&
-        !this._isEntireWord(pageContent, match.index, match[0].length)
-      ) {
-        continue;
-      }
 
-      const [matchPos, matchLen] = getOriginalIndex(
-        diffs,
-        match.index,
-        match[0].length
-      );
+    // -----
+    // Create a new instance of Fuse
+    const fuse = new FuseSearch(pageContent);
+    matchIdx = fuse.search(this._state.query.toLowerCase());
+    queryLen = fuse.get_result_length();
+    // while ((match = query.exec(pageContent)) !== null) {
+    /* if (
+      entireWord &&
+      !this._isEntireWord(pageContent, match.index, match[0].length)
+    ) {
+      continue;
+    } */
 
-      if (matchLen) {
-        matches.push(matchPos);
-        matchesLength.push(matchLen);
-      }
+    if (matchIdx === -1) {
+      this._pageMatches[pageIndex] = [];
+      this._pageMatchesLength[pageIndex] = [];
+      return;
     }
+
+    const [matchPos, matchLen] = getOriginalIndex(
+      diffs,
+      matchIdx, // match.index,
+      queryLen,  // match[0].length
+    );
+
+    if (matchLen) {
+      matches.push(matchPos);
+      matchesLength.push(matchLen);
+    }
+    //}
     this._pageMatches[pageIndex] = matches;
     this._pageMatchesLength[pageIndex] = matchesLength;
   }
@@ -759,7 +731,7 @@ class PDFFindController {
       return;
     }
 
-    const { caseSensitive, entireWord, phraseSearch, fuseSearch  } = this._state;
+    const { caseSensitive, entireWord, phraseSearch } = this._state;
     const pageContent = this._pageContents[pageIndex];
     const hasDiacritics = this._hasDiacritics[pageIndex];
 
@@ -923,6 +895,12 @@ class PDFFindController {
         /* this._pendingFindMatches[i] = true; */
         this._pendingFindMatches.add(i);
         this._extractTextPromises[i].then(pageIdx => {
+          // @see thread
+          if (pageIdx === -1) {
+            this._pendingFindMatches.delete(pageIdx);
+            return;
+          }
+
           this._pendingFindMatches.delete(pageIdx);
           this._calculateMatch(pageIdx);
         });

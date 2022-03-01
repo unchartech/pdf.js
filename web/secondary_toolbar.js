@@ -159,6 +159,7 @@ class SecondaryToolbar {
 
     // Bind the event listeners for click, cursor tool, and scroll/spread mode
     // actions.
+    // console.log('options', this.buttons);
     this._bindClickListeners();
     this._bindCursorToolsListener(options);
     this._bindScrollModeListener(options);

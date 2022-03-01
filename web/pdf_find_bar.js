@@ -83,9 +83,9 @@ class PDFFindBar {
       this.dispatchEvent("entirewordchange");
     });
 
-    this.matchDiacritics.addEventListener("click", () => {
+    /*this.matchDiacritics.addEventListener("click", () => {
       this.dispatchEvent("diacriticmatchingchange");
-    });
+    });*/
 
     this.eventBus._on("resize", this._adjustWidth.bind(this));
   }
