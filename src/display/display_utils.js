@@ -14,53 +14,27 @@
  */
 
 import {
-  assert,
+  BaseCanvasFactory,
+  BaseCMapReaderFactory,
+  BaseStandardFontDataFactory,
+  BaseSVGFactory,
+} from "./base_factory.js";
+import {
   BaseException,
-  CMapCompressionType,
   isString,
-  removeNullCharacters,
   stringToBytes,
-  unreachable,
   Util,
   warn,
 } from "../shared/util.js";
 
-const DEFAULT_LINK_REL = "noopener noreferrer nofollow";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-class BaseCanvasFactory {
-  constructor() {
-    if (this.constructor === BaseCanvasFactory) {
-      unreachable("Cannot initialize BaseCanvasFactory.");
-    }
-  }
+class PixelsPerInch {
+  static CSS = 96.0;
 
-  create(width, height) {
-    unreachable("Abstract method `create` called.");
-  }
+  static PDF = 72.0;
 
-  reset(canvasAndContext, width, height) {
-    if (!canvasAndContext.canvas) {
-      throw new Error("Canvas is not specified");
-    }
-    if (width <= 0 || height <= 0) {
-      throw new Error("Invalid canvas size");
-    }
-    canvasAndContext.canvas.width = width;
-    canvasAndContext.canvas.height = height;
-  }
-
-  destroy(canvasAndContext) {
-    if (!canvasAndContext.canvas) {
-      throw new Error("Canvas is not specified");
-    }
-    // Zeroing the width and height cause Firefox to release graphics
-    // resources immediately, which can greatly reduce memory consumption.
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
-    canvasAndContext.canvas = null;
-    canvasAndContext.context = null;
-  }
+  static PDF_TO_CSS_UNITS = this.CSS / this.PDF;
 }
 
 class DOMCanvasFactory extends BaseCanvasFactory {
@@ -69,129 +43,75 @@ class DOMCanvasFactory extends BaseCanvasFactory {
     this._document = ownerDocument;
   }
 
-  create(width, height) {
-    if (width <= 0 || height <= 0) {
-      throw new Error("Invalid canvas size");
-    }
+  _createCanvas(width, height) {
     const canvas = this._document.createElement("canvas");
-    const context = canvas.getContext("2d");
     canvas.width = width;
     canvas.height = height;
-    return {
-      canvas,
-      context,
-    };
+    return canvas;
   }
 }
 
-class BaseCMapReaderFactory {
-  constructor({ baseUrl = null, isCompressed = false }) {
-    if (this.constructor === BaseCMapReaderFactory) {
-      unreachable("Cannot initialize BaseCMapReaderFactory.");
+async function fetchData(url, asTypedArray = false) {
+  if (
+    (typeof PDFJSDev !== "undefined" && PDFJSDev.test("MOZCENTRAL")) ||
+    isValidFetchUrl(url, document.baseURI)
+  ) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(response.statusText);
     }
-    this.baseUrl = baseUrl;
-    this.isCompressed = isCompressed;
+    return asTypedArray
+      ? new Uint8Array(await response.arrayBuffer())
+      : stringToBytes(await response.text());
   }
 
-  async fetch({ name }) {
-    if (!this.baseUrl) {
-      throw new Error(
-        'The CMap "baseUrl" parameter must be specified, ensure that ' +
-          'the "cMapUrl" and "cMapPacked" API parameters are provided.'
-      );
-    }
-    if (!name) {
-      throw new Error("CMap name must be specified.");
-    }
-    const url = this.baseUrl + name + (this.isCompressed ? ".bcmap" : "");
-    const compressionType = this.isCompressed
-      ? CMapCompressionType.BINARY
-      : CMapCompressionType.NONE;
+  // The Fetch API is not supported.
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("GET", url, /* asTypedArray = */ true);
 
-    return this._fetchData(url, compressionType).catch(reason => {
-      throw new Error(
-        `Unable to load ${this.isCompressed ? "binary " : ""}CMap at: ${url}`
-      );
-    });
-  }
+    if (asTypedArray) {
+      request.responseType = "arraybuffer";
+    }
+    request.onreadystatechange = () => {
+      if (request.readyState !== XMLHttpRequest.DONE) {
+        return;
+      }
+      if (request.status === 200 || request.status === 0) {
+        let data;
+        if (asTypedArray && request.response) {
+          data = new Uint8Array(request.response);
+        } else if (!asTypedArray && request.responseText) {
+          data = stringToBytes(request.responseText);
+        }
+        if (data) {
+          resolve(data);
+          return;
+        }
+      }
+      reject(new Error(request.statusText));
+    };
 
-  /**
-   * @private
-   */
-  _fetchData(url, compressionType) {
-    unreachable("Abstract method `_fetchData` called.");
-  }
+    request.send(null);
+  });
 }
 
 class DOMCMapReaderFactory extends BaseCMapReaderFactory {
   _fetchData(url, compressionType) {
-    if (
-      (typeof PDFJSDev !== "undefined" && PDFJSDev.test("MOZCENTRAL")) ||
-      (isFetchSupported() && isValidFetchUrl(url, document.baseURI))
-    ) {
-      return fetch(url).then(async response => {
-        if (!response.ok) {
-          throw new Error(response.statusText);
-        }
-        let cMapData;
-        if (this.isCompressed) {
-          cMapData = new Uint8Array(await response.arrayBuffer());
-        } else {
-          cMapData = stringToBytes(await response.text());
-        }
-        return { cMapData, compressionType };
-      });
-    }
-
-    // The Fetch API is not supported.
-    return new Promise((resolve, reject) => {
-      const request = new XMLHttpRequest();
-      request.open("GET", url, true);
-
-      if (this.isCompressed) {
-        request.responseType = "arraybuffer";
-      }
-      request.onreadystatechange = () => {
-        if (request.readyState !== XMLHttpRequest.DONE) {
-          return;
-        }
-        if (request.status === 200 || request.status === 0) {
-          let cMapData;
-          if (this.isCompressed && request.response) {
-            cMapData = new Uint8Array(request.response);
-          } else if (!this.isCompressed && request.responseText) {
-            cMapData = stringToBytes(request.responseText);
-          }
-          if (cMapData) {
-            resolve({ cMapData, compressionType });
-            return;
-          }
-        }
-        reject(new Error(request.statusText));
-      };
-
-      request.send(null);
+    return fetchData(url, /* asTypedArray = */ this.isCompressed).then(data => {
+      return { cMapData: data, compressionType };
     });
   }
 }
 
-class DOMSVGFactory {
-  create(width, height) {
-    assert(width > 0 && height > 0, "Invalid SVG dimensions");
-
-    const svg = document.createElementNS(SVG_NS, "svg:svg");
-    svg.setAttribute("version", "1.1");
-    svg.setAttribute("width", width + "px");
-    svg.setAttribute("height", height + "px");
-    svg.setAttribute("preserveAspectRatio", "none");
-    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-
-    return svg;
+class DOMStandardFontDataFactory extends BaseStandardFontDataFactory {
+  _fetchData(url) {
+    return fetchData(url, /* asTypedArray = */ true);
   }
+}
 
-  createElement(type) {
-    assert(typeof type === "string", "Invalid SVG element type");
-
+class DOMSVGFactory extends BaseSVGFactory {
+  _createSVG(type) {
     return document.createElementNS(SVG_NS, type);
   }
 }
@@ -385,73 +305,9 @@ class PageViewport {
 
 class RenderingCancelledException extends BaseException {
   constructor(msg, type) {
-    super(msg);
+    super(msg, "RenderingCancelledException");
     this.type = type;
   }
-}
-
-const LinkTarget = {
-  NONE: 0, // Default value.
-  SELF: 1,
-  BLANK: 2,
-  PARENT: 3,
-  TOP: 4,
-};
-
-/**
- * @typedef ExternalLinkParameters
- * @typedef {Object} ExternalLinkParameters
- * @property {string} url - An absolute URL.
- * @property {LinkTarget} [target] - The link target. The default value is
- *   `LinkTarget.NONE`.
- * @property {string} [rel] - The link relationship. The default value is
- *   `DEFAULT_LINK_REL`.
- * @property {boolean} [enabled] - Whether the link should be enabled. The
- *   default value is true.
- */
-
-/**
- * Adds various attributes (href, title, target, rel) to hyperlinks.
- * @param {HTMLLinkElement} link - The link element.
- * @param {ExternalLinkParameters} params
- */
-function addLinkAttributes(link, { url, target, rel, enabled = true } = {}) {
-  assert(
-    url && typeof url === "string",
-    'addLinkAttributes: A valid "url" parameter must provided.'
-  );
-
-  const urlNullRemoved = removeNullCharacters(url);
-  if (enabled) {
-    link.href = link.title = urlNullRemoved;
-  } else {
-    link.href = "";
-    link.title = `Disabled: ${urlNullRemoved}`;
-    link.onclick = () => {
-      return false;
-    };
-  }
-
-  let targetStr = ""; // LinkTarget.NONE
-  switch (target) {
-    case LinkTarget.NONE:
-      break;
-    case LinkTarget.SELF:
-      targetStr = "_self";
-      break;
-    case LinkTarget.BLANK:
-      targetStr = "_blank";
-      break;
-    case LinkTarget.PARENT:
-      targetStr = "_parent";
-      break;
-    case LinkTarget.TOP:
-      targetStr = "_top";
-      break;
-  }
-  link.target = targetStr;
-
-  link.rel = typeof rel === "string" ? rel : DEFAULT_LINK_REL;
 }
 
 function isDataScheme(url) {
@@ -566,15 +422,6 @@ class StatTimer {
     }
     return outBuf.join("");
   }
-}
-
-function isFetchSupported() {
-  return (
-    typeof fetch !== "undefined" &&
-    typeof Response !== "undefined" &&
-    "body" in Response.prototype &&
-    typeof ReadableStream !== "undefined"
-  );
 }
 
 function isValidFetchUrl(url, baseUrl) {
@@ -700,25 +547,36 @@ class PDFDateString {
   }
 }
 
+/**
+ * NOTE: This is (mostly) intended to support printing of XFA forms.
+ */
+function getXfaPageViewport(xfaPage, { scale = 1, rotation = 0 }) {
+  const { width, height } = xfaPage.attributes.style;
+  const viewBox = [0, 0, parseInt(width), parseInt(height)];
+
+  return new PageViewport({
+    viewBox,
+    scale,
+    rotation,
+  });
+}
+
 export {
-  addLinkAttributes,
-  BaseCanvasFactory,
-  BaseCMapReaderFactory,
-  DEFAULT_LINK_REL,
   deprecated,
   DOMCanvasFactory,
   DOMCMapReaderFactory,
+  DOMStandardFontDataFactory,
   DOMSVGFactory,
   getFilenameFromUrl,
   getPdfFilenameFromUrl,
+  getXfaPageViewport,
   isDataScheme,
-  isFetchSupported,
   isPdfFile,
   isValidFetchUrl,
-  LinkTarget,
   loadScript,
   PageViewport,
   PDFDateString,
+  PixelsPerInch,
   RenderingCancelledException,
   StatTimer,
 };

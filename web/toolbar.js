@@ -23,9 +23,6 @@ import {
 } from "./ui_utils.js";
 
 const PAGE_NUMBER_LOADING_INDICATOR = "visiblePageIsLoading";
-// Keep the two values below up-to-date with the values in `web/viewer.css`:
-const SCALE_SELECT_CONTAINER_WIDTH = 140; // px
-const SCALE_SELECT_WIDTH = 162; // px
 
 /**
  * @typedef {Object} ToolbarOptions
@@ -33,9 +30,8 @@ const SCALE_SELECT_WIDTH = 162; // px
  * @property {HTMLSpanElement} numPages - Label that contains number of pages.
  * @property {HTMLInputElement} pageNumber - Control for display and user input
  *   of the current page number.
- * @property {HTMLSpanElement} scaleSelectContainer - Container where scale
- *   controls are placed. The width is adjusted on UI initialization.
  * @property {HTMLSelectElement} scaleSelect - Scale selection control.
+ *   Its width is adjusted, when necessary, on UI localization.
  * @property {HTMLOptionElement} customScaleOption - The item used to display
  *   a non-predefined scale.
  * @property {HTMLButtonElement} previous - Button to go to the previous page.
@@ -47,8 +43,8 @@ const SCALE_SELECT_WIDTH = 162; // px
  * @property {HTMLButtonElement} presentationModeButton - Button to switch to
  *   presentation mode.
  * @property {HTMLButtonElement} download - Button to download the document.
- * @property {HTMLAElement} viewBookmark - Element to link current url of
- *   the page view.
+ * @property {HTMLAnchorElement} viewBookmark - Button to obtain a bookmark link
+ *   to the current location in the document.
  */
 
 class Toolbar {
@@ -78,7 +74,6 @@ class Toolbar {
     this.items = {
       numPages: options.numPages,
       pageNumber: options.pageNumber,
-      scaleSelectContainer: options.scaleSelectContainer,
       scaleSelect: options.scaleSelect,
       customScaleOption: options.customScaleOption,
       previous: options.previous,
@@ -147,7 +142,6 @@ class Toolbar {
     });
 
     scaleSelect.addEventListener("change", function() {
-      console.log(this.value);
       // TODO: possible values:
       // auto
       // page-actual
@@ -162,6 +156,19 @@ class Toolbar {
         source: self,
         value: this.value
       });
+    });
+    // Here we depend on browsers dispatching the "click" event *after* the
+    // "change" event, when the <select>-element changes.
+    scaleSelect.addEventListener("click", function (evt) {
+      const target = evt.target;
+      // Remove focus when an <option>-element was *clicked*, to improve the UX
+      // for mouse users (fixes bug 1300525 and issue 4923).
+      if (
+        this.value === self.pageScaleValue &&
+        target.tagName.toUpperCase() === "OPTION"
+      ) {
+        this.blur();
+      }
     });
     // Suppress context menus for some controls.
     scaleSelect.oncontextmenu = noContextMenuHandler;
@@ -247,6 +254,16 @@ class Toolbar {
       l10n.get("page_scale_width")
     ]);
 
+    const style = getComputedStyle(items.scaleSelect),
+      scaleSelectContainerWidth = parseInt(
+        style.getPropertyValue("--scale-select-container-width"),
+        10
+      ),
+      scaleSelectOverflow = parseInt(
+        style.getPropertyValue("--scale-select-overflow"),
+        10
+      );
+
     // The temporary canvas is used to measure text length in the DOM.
     let canvas = document.createElement("canvas");
     if (
@@ -258,8 +275,7 @@ class Toolbar {
     let ctx = canvas.getContext("2d", { alpha: false });
 
     await animationStarted;
-    const { fontSize, fontFamily } = getComputedStyle(items.scaleSelect);
-    ctx.font = `${fontSize} ${fontFamily}`;
+    ctx.font = `${style.fontSize} ${style.fontFamily}`;
 
     let maxWidth = 0;
     for (const predefinedValue of await predefinedValuesPromise) {
@@ -268,12 +284,11 @@ class Toolbar {
         maxWidth = width;
       }
     }
-    const overflow = SCALE_SELECT_WIDTH - SCALE_SELECT_CONTAINER_WIDTH;
-    maxWidth += 2 * overflow;
+    maxWidth += 2 * scaleSelectOverflow;
 
-    if (maxWidth > SCALE_SELECT_CONTAINER_WIDTH) {
-      items.scaleSelect.style.width = `${maxWidth + overflow}px`;
-      items.scaleSelectContainer.style.width = `${maxWidth}px`;
+    if (maxWidth > scaleSelectContainerWidth) {
+      const doc = document.documentElement;
+      doc.style.setProperty("--scale-select-container-width", `${maxWidth}px`);
     }
     // Zeroing the width and height cause Firefox to release graphics resources
     // immediately, which can greatly reduce memory consumption.

@@ -13,8 +13,9 @@
  * limitations under the License.
  */
 
+import { AnnotationMode, PixelsPerInch } from "pdfjs-lib";
 import { PDFPrintServiceFactory, PDFViewerApplication } from "./app.js";
-import { viewerCompatibilityParams } from "./viewer_compatibility.js";
+import { getXfaHtmlForPrinting } from "./print_utils.js";
 
 let activeService = null;
 let overlayManager = null;
@@ -32,7 +33,7 @@ function renderPage(
   const scratchCanvas = activeService.scratchCanvas;
 
   // The size of the canvas in pixels for printing.
-  const PRINT_UNITS = printResolution / 72.0;
+  const PRINT_UNITS = printResolution / PixelsPerInch.PDF;
   scratchCanvas.width = Math.floor(size.width * PRINT_UNITS);
   scratchCanvas.height = Math.floor(size.height * PRINT_UNITS);
 
@@ -48,7 +49,7 @@ function renderPage(
       transform: [PRINT_UNITS, 0, 0, PRINT_UNITS, 0, 0],
       viewport: pdfPage.getViewport({ scale: 1, rotation: size.rotation }),
       intent: "print",
-      annotationStorage: pdfDocument.annotationStorage,
+      annotationMode: AnnotationMode.ENABLE_STORAGE,
       optionalContentConfigPromise,
     };
     return pdfPage.render(renderContext).promise;
@@ -139,6 +140,11 @@ PDFPrintService.prototype = {
   },
 
   renderPages() {
+    if (this.pdfDocument.isPureXfa) {
+      getXfaHtmlForPrinting(this.printContainer, this.pdfDocument);
+      return Promise.resolve();
+    }
+
     const pageCount = this.pagesOverview.length;
     const renderNextPage = (resolve, reject) => {
       this.throwIfInactive();
@@ -169,10 +175,7 @@ PDFPrintService.prototype = {
     this.throwIfInactive();
     const img = document.createElement("img");
     const scratchCanvas = this.scratchCanvas;
-    if (
-      "toBlob" in scratchCanvas &&
-      !viewerCompatibilityParams.disableCreateObjectURL
-    ) {
+    if ("toBlob" in scratchCanvas) {
       scratchCanvas.toBlob(function (blob) {
         img.src = URL.createObjectURL(blob);
       });
@@ -181,6 +184,7 @@ PDFPrintService.prototype = {
     }
 
     const wrapper = document.createElement("div");
+    wrapper.className = "printedPage";
     wrapper.appendChild(img);
     this.printContainer.appendChild(wrapper);
 
